@@ -5,16 +5,15 @@ import { useRouter } from "next/navigation";
 import { useUser } from "../context/UserProvider";
 import { AppLoader } from "./AppLoader";
 
-
-export function AuthGate({
+export function CoupleGate({
+  mode,
   children,
-  requireCouple = false,
 }: {
+  mode: "requireCouple" | "requireNoCouple";
   children: React.ReactNode;
-  requireCouple?: boolean;
 }) {
-  const router = useRouter();
   const { fbUser, userDoc, loading } = useUser();
+  const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
@@ -24,15 +23,20 @@ export function AuthGate({
       return;
     }
 
-    if (requireCouple && !userDoc?.coupleId) {
-      router.replace("/pair");
-      return;
-    }
-  }, [loading, fbUser, userDoc?.coupleId, requireCouple, router]);
+    const hasCouple = !!userDoc?.coupleId;
 
-  if (loading) return <AppLoader />;
-  if (!fbUser) return null;
-  if (requireCouple && !userDoc?.coupleId) return null;
+    if (mode === "requireCouple" && !hasCouple) {
+      router.replace("/pair");
+    }
+
+    if (mode === "requireNoCouple" && hasCouple) {
+      router.replace("/");
+    }
+  }, [fbUser, userDoc, loading, mode, router]);
+
+  if (loading) {
+    return <AppLoader />;
+  }
 
   return <>{children}</>;
 }

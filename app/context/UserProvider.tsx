@@ -2,7 +2,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, User as FbUser } from "firebase/auth";
+import { onAuthStateChanged, User as FbUser, signOut } from "firebase/auth";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { ensureUserDoc } from "../lib/user";
@@ -19,6 +19,7 @@ type UserContextValue = {
   fbUser: FbUser | null;
   userDoc: AppUserDoc | null;
   loading: boolean;
+  logout: () => Promise<void>;
 };
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -29,7 +30,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let unsubDoc: null | (() => void) = null;
+
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
+      // limpiar listener anterior si existía
+      if (unsubDoc) {
+        unsubDoc();
+        unsubDoc = null;
+      }
+
       setFbUser(u);
 
       if (!u) {
@@ -39,6 +48,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       }
 
       setLoading(true);
+
       await ensureUserDoc({
         uid: u.uid,
         email: u.email,
@@ -47,7 +57,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       });
 
       const ref = doc(db, "users", u.uid);
-      const unsubDoc = onSnapshot(
+      unsubDoc = onSnapshot(
         ref,
         (snap) => {
           const data = snap.data() as any;
@@ -60,53 +70,58 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           });
           setLoading(false);
         },
-        () => {
-          setLoading(false);
-        }
+        () => setLoading(false)
       );
-
-      // cleanup doc listener when auth changes
-      return () => unsubDoc();
     });
 
-    return () => unsubAuth();
+    return () => {
+      if (unsubDoc) unsubDoc();
+      unsubAuth();
+    };
   }, []);
 
   useEffect(() => {
-  if (!fbUser || !userDoc) return;
-  if (userDoc.coupleId) return; // ya tiene pareja
-  const code = userDoc.pendingInviteCode;
-  if (!code) return;
+    if (!fbUser || !userDoc) return;
+    if (userDoc.coupleId) return; // ya tiene pareja
+    const code = userDoc.pendingInviteCode;
+    if (!code) return;
 
-  const inviteRef = doc(db, "invites", code);
+    const inviteRef = doc(db, "invites", code);
 
-  const unsub = onSnapshot(inviteRef, async (snap) => {
-    if (!snap.exists()) return;
-    const invite = snap.data() as any;
+    const unsub = onSnapshot(inviteRef, async (snap) => {
+      if (!snap.exists()) return;
+      const invite = snap.data() as any;
 
-    if (invite.status === "claimed" && invite.coupleId) {
-      // Set coupleId y limpiar pendingInviteCode
-      await setDoc(
-        doc(db, "users", fbUser.uid),
-        { coupleId: invite.coupleId, pendingInviteCode: null },
-        { merge: true }
-      );
-    }
+      if (invite.status === "claimed" && invite.coupleId) {
+        // Set coupleId y limpiar pendingInviteCode
+        await setDoc(
+          doc(db, "users", fbUser.uid),
+          { coupleId: invite.coupleId, pendingInviteCode: null },
+          { merge: true }
+        );
+      }
 
-    if (invite.status === "expired") {
-      // Limpia pending si expiró
-      await setDoc(
-        doc(db, "users", fbUser.uid),
-        { pendingInviteCode: null },
-        { merge: true }
-      );
-    }
-  });
+      if (invite.status === "expired") {
+        // Limpia pending si expiró
+        await setDoc(
+          doc(db, "users", fbUser.uid),
+          { pendingInviteCode: null },
+          { merge: true }
+        );
+      }
+    });
 
-  return () => unsub();
-}, [fbUser, userDoc]);
+    return () => unsub();
+  }, [fbUser, userDoc]);
 
-  const value = useMemo(() => ({ fbUser, userDoc, loading }), [fbUser, userDoc, loading]);
+  const logout = async () => {
+    await signOut(auth);
+  };
+
+  const value = useMemo(
+    () => ({ fbUser, userDoc, loading, logout }),
+    [fbUser, userDoc, loading]
+  );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }

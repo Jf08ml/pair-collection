@@ -3,42 +3,69 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+import {
+  ActionIcon,
+  Alert,
+  Anchor,
+  Badge,
+  Box,
+  Button,
+  Card,
+  Container,
+  Divider,
+  Group,
+  Loader,
+  Paper,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  Textarea,
+  Title,
+  Tooltip,
+  rem,
+} from "@mantine/core";
+
+import {
+  IconTrash,
+  IconExternalLink,
+  IconPlus,
+  IconInfoCircle,
+} from "@tabler/icons-react";
+
 import { AuthGate } from "./components/AuthGate";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { useUser } from "./context/UserProvider";
-import { addItem } from "./lib/items";
 
-export default function HomePage() {
-  return (
-    <AuthGate requireCouple>
-      <HomeInner />
-    </AuthGate>
-  );
-}
-
-function isProbablyUrl(s: string) {
-  const t = (s || "").trim();
-  if (!t) return false;
-  // soporta urls sin esquema tipo "www..."
-  return /^https?:\/\/\S+/i.test(t) || /^www\.\S+/i.test(t);
-}
+import {
+  addItem,
+  getDomain,
+  listInboxItems,
+  moveItemToCollection,
+  deleteItem,
+} from "./lib/items";
+import { createCollection, listCollections } from "./lib/collections";
+import { CoupleGate } from "./components/CoupleGate";
 
 function normalizeUrl(raw: string) {
   let t = (raw || "").trim();
   if (!t) return "";
-  // si viene como "www.xxx.com/..." agrega https
   if (/^www\./i.test(t)) t = `https://${t}`;
-  // quita espacios internos raros
   t = t.replace(/\s+/g, "");
-  // valida
-  try {
-    const u = new URL(t);
-    return u.toString();
-  } catch {
-    return t; // lo dejamos para que el usuario lo corrija, pero no explotamos
-  }
+  return t;
 }
 
-function HomeInner() {
+export default function HomePage() {
+  return (
+    <CoupleGate mode="requireCouple">
+      <InboxInner />
+    </CoupleGate>
+  );
+}
+
+function InboxInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const { fbUser, userDoc } = useUser();
@@ -51,71 +78,75 @@ function HomeInner() {
   const sharedText = sp.get("sharedText") || "";
 
   const [url, setUrl] = useState("");
+  const [title, setTitle] = useState(""); // Nuevo estado para el título
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const [clipHint, setClipHint] = useState<string | null>(null);
-  const [clipChecked, setClipChecked] = useState(false);
+  const [collections, setCollections] = useState<any[]>([]);
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [movingId, setMovingId] = useState<string | null>(null);
+  const [selectedCollection, setSelectedCollection] = useState("INBOX");
+  const [showNewCollection, setShowNewCollection] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState("");
+  const [creatingCollection, setCreatingCollection] = useState(false);
 
   const hasShared = useMemo(() => !!sharedUrl, [sharedUrl]);
+
+  const collectionOptions = useMemo(() => {
+    return [
+      { value: "INBOX", label: "📥 Inbox" },
+      ...collections.map((c) => ({
+        value: c.id,
+        label: `${c.emoji || "✨"} ${c.name}`,
+      })),
+      { value: "__new__", label: "➕ Nueva colección…" },
+    ];
+  }, [collections]);
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const [cols, inbox] = await Promise.all([
+        listCollections(coupleId),
+        listInboxItems({ coupleId }),
+      ]);
+      setCollections(cols);
+      setItems(inbox);
+
+      if (
+        !cols.find((c) => c.id === selectedCollection) &&
+        selectedCollection !== "INBOX"
+      ) {
+        setSelectedCollection("INBOX");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coupleId]);
 
   useEffect(() => {
     if (!hasShared) return;
     setUrl(normalizeUrl(sharedUrl));
+    setTitle(sharedTitle); // Setear el título compartido si existe
     setNote(sharedText);
-    // si llegó desde share params, no mostramos hint de clipboard
-    setClipHint(null);
-    setClipChecked(true);
-  }, [hasShared, sharedUrl, sharedText]);
-
-  // intenta “sugerir” (no autopaste) una vez, si no viene de share
-  useEffect(() => {
-    if (hasShared) return;
-    if (clipChecked) return;
-    setClipChecked(true);
-
-    (async () => {
-      try {
-        if (!navigator?.clipboard?.readText) return;
-        const text = await navigator.clipboard.readText();
-        if (isProbablyUrl(text)) {
-          setClipHint(normalizeUrl(text));
-        }
-      } catch {
-        // iOS puede bloquear si no hay gesto; lo ignoramos
-      }
-    })();
-  }, [hasShared, clipChecked]);
-
-  async function pasteFromClipboard() {
-    setMsg(null);
-    try {
-      if (!navigator?.clipboard?.readText) {
-        return setMsg("Tu navegador no permite pegar automáticamente. Mantén presionado y pega.");
-      }
-      const text = await navigator.clipboard.readText();
-      if (!text) return setMsg("No encontré nada en el portapapeles.");
-      if (!isProbablyUrl(text)) return setMsg("Lo que tienes copiado no parece un link.");
-
-      setUrl(normalizeUrl(text));
-      setClipHint(null);
-      setMsg("Listo. Ahora toca Guardar ✅");
-    } catch {
-      setMsg("No pude leer el portapapeles. En iPhone: toca el input y selecciona “Pegar”.");
-    }
-  }
+  }, [hasShared, sharedUrl, sharedTitle, sharedText]);
 
   async function save() {
     setMsg(null);
     const finalUrl = normalizeUrl(url);
     if (!finalUrl) return setMsg("Pega un link primero.");
 
-    // validación básica real
     try {
       new URL(finalUrl);
     } catch {
-      return setMsg("Ese link no parece válido. Revisa que empiece por https://");
+      return setMsg("Link inválido. Debe empezar por https://");
     }
 
     setSaving(true);
@@ -124,18 +155,18 @@ function HomeInner() {
         coupleId,
         createdBy: uid,
         url: finalUrl,
-        title: sharedTitle || null,
+        title: title || sharedTitle || null, // Usar el título ingresado si existe
         note: note || null,
-        collectionId: "INBOX",
+        collectionId: selectedCollection || "INBOX",
       });
 
       setMsg("Guardado ✅");
-
-      // limpia query params para no re-guardar al refresh
       router.replace("/");
       setUrl("");
+      setTitle(""); // Limpiar el campo título
       setNote("");
-      setClipHint(null);
+      setSelectedCollection("INBOX");
+      await refresh();
     } catch (e: any) {
       setMsg(e?.message || "Error guardando");
     } finally {
@@ -143,72 +174,375 @@ function HomeInner() {
     }
   }
 
+  async function onMove(item: any, toCollectionId: string) {
+    setMsg(null);
+    const fromCollectionId = item.collectionId || "INBOX";
+    if (fromCollectionId === toCollectionId) return;
+
+    setMovingId(item.id);
+    try {
+      await moveItemToCollection({
+        coupleId,
+        itemId: item.id,
+        fromCollectionId,
+        toCollectionId,
+      });
+
+      if (toCollectionId !== "INBOX") {
+        setItems((prev) => prev.filter((x) => x.id !== item.id));
+      } else {
+        await refresh();
+      }
+      setMsg("Movido ✅");
+    } catch (e: any) {
+      setMsg(e?.message || "No pude mover");
+    } finally {
+      setMovingId(null);
+    }
+  }
+
+  async function handleCreateCollection() {
+    if (!newCollectionName.trim()) return;
+    setCreatingCollection(true);
+    try {
+      const col = (await createCollection({
+        coupleId,
+        name: newCollectionName.trim(),
+        emoji: "✨",
+        createdBy: uid,
+      })) as { id: string } | string;
+      setNewCollectionName("");
+      setShowNewCollection(false);
+      await refresh();
+      setSelectedCollection(
+        typeof col === "string" ? col : (col as { id: string }).id
+      );
+    } catch (e: any) {
+      setMsg(e?.message || "No se pudo crear");
+    } finally {
+      setCreatingCollection(false);
+    }
+  }
+
   return (
-    <main style={{ padding: 20, maxWidth: 560, margin: "0 auto" }}>
-      <h1 style={{ margin: 0 }}>Inbox</h1>
-      <p style={{ opacity: 0.8 }}>
-        En iPhone: copia el enlace y pégalo aquí. En Android también puedes “Compartir” directo.
-      </p>
+    <Box
+      mih="100vh"
+      pb="xl"
+      style={{
+        background:
+          "radial-gradient(1200px 600px at 18% 0%, rgba(255,105,180,0.16), transparent 55%), radial-gradient(1200px 600px at 82% 0%, rgba(99,102,241,0.12), transparent 55%), var(--mantine-color-body)",
+      }}
+    >
+      {/* Header compacto */}
+      <Box
+        pos="sticky"
+        top={0}
+        style={{
+          zIndex: 10,
+          backdropFilter: "blur(10px)",
+          background:
+            "color-mix(in srgb, var(--mantine-color-body) 78%, transparent)",
+          borderBottom: "1px solid var(--mantine-color-default-border)",
+        }}
+      >
+        <Container size={860} py="md">
+          <Group justify="space-between" align="center">
+            <Group gap="sm" align="baseline">
+              <Title order={1} size={26} style={{ letterSpacing: -0.6 }}>
+                Inbox 💞
+              </Title>
+              <Text size="sm" c="dimmed">
+                {loading ? "…" : `${items.length}`}
+              </Text>
+            </Group>
 
-      {!hasShared && clipHint && !url && (
-        <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "#f6f6f6", border: "1px solid #eee" }}>
-          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 8 }}>
-            Detecté un link en tu portapapeles:
-          </div>
-          <div style={{ fontSize: 13, wordBreak: "break-all", marginBottom: 10 }}>
-            {clipHint}
-          </div>
-          <button
-            onClick={() => { setUrl(clipHint); setClipHint(null); setMsg("Listo. Ahora toca Guardar ✅"); }}
-            style={{ padding: 10, borderRadius: 12, border: "none", background: "black", color: "white", width: "100%" }}
+            <Group gap="sm">
+              <ThemeToggle />
+              <Button
+                variant="default"
+                radius="xl"
+                onClick={() => router.push("/collections")}
+              >
+                Colecciones
+              </Button>
+            </Group>
+          </Group>
+        </Container>
+      </Box>
+
+      <Container size={860} mt="lg">
+        <Stack gap="md">
+          {/* Form compacto */}
+          <Paper withBorder radius="xl" p="md">
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <TextInput
+                label="Link"
+                value={url}
+                onChange={(e) => setUrl(e.currentTarget.value)}
+                placeholder="Pega un link…"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+              />
+
+              <TextInput
+                label="Título"
+                value={title}
+                onChange={(e) => setTitle(e.currentTarget.value)}
+                placeholder="Título del link (opcional)"
+                autoCapitalize="sentences"
+                autoCorrect="on"
+              />
+
+              <Select
+                label="Destino"
+                value={selectedCollection}
+                onChange={(v) => {
+                  const val = v || "INBOX";
+                  if (val === "__new__") setShowNewCollection(true);
+                  else {
+                    setSelectedCollection(val);
+                    setShowNewCollection(false);
+                  }
+                }}
+                data={collectionOptions}
+                searchable={false}
+              />
+
+              <Textarea
+                label="Nota"
+                value={note}
+                onChange={(e) => setNote(e.currentTarget.value)}
+                placeholder="Opcional…"
+                autosize
+                minRows={2}
+                maxRows={4}
+              />
+
+              <Box>
+                <Text size="sm" fw={600} mb={6}>
+                  &nbsp;
+                </Text>
+                <Group justify="space-between" align="center">
+                  <Button
+                    onClick={save}
+                    loading={saving}
+                    leftSection={<IconPlus size={16} />}
+                    radius="md"
+                    size="md"
+                    style={{ flex: 1 }}
+                  >
+                    Guardar
+                  </Button>
+
+                  {hasShared && (
+                    <Badge variant="light" radius="xl" ml="sm">
+                      Compartido ✅
+                    </Badge>
+                  )}
+                </Group>
+              </Box>
+            </SimpleGrid>
+
+            {showNewCollection && (
+              <Card withBorder radius="lg" p="md" mt="sm">
+                <Group gap="sm" align="flex-end" wrap="wrap">
+                  <TextInput
+                    value={newCollectionName}
+                    onChange={(e) =>
+                      setNewCollectionName(e.currentTarget.value)
+                    }
+                    placeholder="Nombre de la colección"
+                    disabled={creatingCollection}
+                    style={{ flex: 1, minWidth: rem(220) }}
+                  />
+                  <Button
+                    onClick={handleCreateCollection}
+                    loading={creatingCollection}
+                    disabled={!newCollectionName.trim()}
+                  >
+                    Crear
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={() => {
+                      setShowNewCollection(false);
+                      setNewCollectionName("");
+                    }}
+                    disabled={creatingCollection}
+                  >
+                    Cancelar
+                  </Button>
+                </Group>
+              </Card>
+            )}
+
+            {msg && (
+              <Alert
+                mt="sm"
+                radius="lg"
+                variant="light"
+                icon={<IconInfoCircle size={16} />}
+              >
+                {msg}
+              </Alert>
+            )}
+          </Paper>
+
+          {/* Lista */}
+          <Paper withBorder radius="xl" p="md">
+            <Group justify="space-between" align="center" mb="sm">
+              <Text fw={800}>Por organizar</Text>
+              {loading && <Loader size="sm" />}
+            </Group>
+
+            <Divider mb="sm" />
+
+            {loading ? (
+              <Text c="dimmed" size="sm">
+                Cargando…
+              </Text>
+            ) : items.length === 0 ? (
+              <Box py="md">
+                <Text c="dimmed" size="sm">
+                  Guarda un link y lo verán juntos luego ✨
+                </Text>
+              </Box>
+            ) : (
+              <Stack gap="sm">
+                {items.map((it) => (
+                  <InboxItemRow
+                    key={it.id}
+                    item={it}
+                    collections={collections}
+                    moving={movingId === it.id}
+                    onMove={(toId) => onMove(it, toId)}
+                    onDelete={async () => {
+                      const ok = window.confirm("¿Eliminar este link?");
+                      if (!ok) return;
+
+                      setMovingId(it.id);
+                      try {
+                        await deleteItem({
+                          coupleId,
+                          itemId: it.id,
+                          collectionId: "INBOX",
+                        });
+                        setItems((prev) => prev.filter((x) => x.id !== it.id));
+                        setMsg("Eliminado ✅");
+                      } catch (e: any) {
+                        setMsg(e?.message || "No pude eliminar");
+                      } finally {
+                        setMovingId(null);
+                      }
+                    }}
+                  />
+                ))}
+              </Stack>
+            )}
+          </Paper>
+        </Stack>
+      </Container>
+    </Box>
+  );
+}
+
+function InboxItemRow(props: {
+  item: any;
+  collections: any[];
+  moving: boolean;
+  onMove: (toCollectionId: string) => void;
+  onDelete?: () => void;
+}) {
+  const { item, collections, moving, onMove, onDelete } = props;
+
+  const domain = getDomain(item.url);
+  const title = item.title || domain || "Idea guardada";
+  const note = item.note || "";
+
+  const moveOptions = collections.map((c) => ({
+    value: c.id,
+    label: `${c.emoji || "✨"} ${c.name}`,
+  }));
+
+  return (
+    <Card withBorder radius="lg" p="md">
+      <Group justify="space-between" align="flex-start" wrap="wrap">
+        <Box style={{ minWidth: 0, flex: 1 }}>
+          <Group gap={8} wrap="wrap">
+            <Badge variant="light" radius="xl">
+              {domain || "link"}
+            </Badge>
+
+            <Anchor
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              size="sm"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              Abrir <IconExternalLink size={14} />
+            </Anchor>
+          </Group>
+
+          <Text
+            fw={800}
+            mt={8}
+            title={title}
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
           >
-            Usar este link
-          </button>
-        </div>
-      )}
+            {title}
+          </Text>
 
-      <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
-        <input
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="Pega un link…"
-          inputMode="url"
-          autoCapitalize="none"
-          autoCorrect="off"
-          style={{ padding: 12, borderRadius: 12, border: "1px solid #ddd" }}
-        />
+          {note && (
+            <Text
+              mt={6}
+              size="sm"
+              c="dimmed"
+              style={{ whiteSpace: "pre-wrap" }}
+            >
+              {note}
+            </Text>
+          )}
+        </Box>
 
-        {!hasShared && (
-          <button
-            onClick={pasteFromClipboard}
-            style={{ padding: 12, borderRadius: 12, border: "1px solid #ddd", background: "white" }}
-          >
-            Pegar del portapapeles
-          </button>
-        )}
-
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Nota opcional…"
-          rows={3}
-          style={{ padding: 12, borderRadius: 12, border: "1px solid #ddd" }}
-        />
-
-        <button
-          onClick={save}
-          disabled={saving}
-          style={{ padding: 12, borderRadius: 12, border: "none", background: "black", color: "white" }}
+        <Group
+          gap="sm"
+          align="flex-start"
+          style={{ width: "100%", maxWidth: rem(360) }}
         >
-          {saving ? "Guardando…" : "Guardar"}
-        </button>
+          <Select
+            disabled={moving}
+            placeholder="Mover a…"
+            data={moveOptions}
+            onChange={(v) => v && onMove(v)}
+            w="100%"
+          />
 
-        {msg && <div style={{ padding: 10, borderRadius: 12, background: "#f3f3f3" }}>{msg}</div>}
-      </div>
+          <Tooltip label="Eliminar" withArrow>
+            <ActionIcon
+              variant="default"
+              disabled={moving}
+              onClick={() => onDelete?.()}
+              size="lg"
+              radius="md"
+              aria-label="Eliminar"
+            >
+              <IconTrash size={18} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
 
-      {hasShared && (
-        <p style={{ marginTop: 10, opacity: 0.7 }}>(Te llegó desde “Compartir” ✅)</p>
-      )}
-    </main>
+        {moving && (
+          <Text size="xs" c="dimmed">
+            Moviendo…
+          </Text>
+        )}
+      </Group>
+    </Card>
   );
 }

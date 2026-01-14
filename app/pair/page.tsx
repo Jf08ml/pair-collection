@@ -4,9 +4,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+
+import {
+  Alert,
+  Button,
+  Card,
+  Container,
+  Divider,
+  Group,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+  Code,
+  CopyButton,
+  rem,
+} from "@mantine/core";
+import {
+  IconBrandGoogle,
+  IconCheck,
+  IconCopy,
+  IconInfoCircle,
+} from "@tabler/icons-react";
+
 import { auth } from "../lib/firebase";
 import { useUser } from "../context/UserProvider";
 import { createInvite, joinWithCode } from "../lib/invites";
+import { AppLoader } from "../components/AppLoader";
 
 export default function PairPage() {
   const router = useRouter();
@@ -17,7 +41,10 @@ export default function PairPage() {
   const [joining, setJoining] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [inputCode, setInputCode] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
 
   const hasCouple = !!userDoc?.coupleId;
 
@@ -52,20 +79,11 @@ export default function PairPage() {
         fbUser.displayName || undefined
       );
       setInviteCode(res.code);
+      setMsg({ type: "success", text: "Código generado ✅" });
     } catch (e: any) {
-      setMsg(e?.message || "Error creando el código.");
+      setMsg({ type: "error", text: e?.message || "Error creando el código." });
     } finally {
       setCreating(false);
-    }
-  }
-
-  async function handleCopy() {
-    if (!inviteCode) return;
-    try {
-      await navigator.clipboard.writeText(inviteCode);
-      setMsg("Código copiado ✅");
-    } catch {
-      setMsg("No pude copiar. Selecciónalo manualmente.");
     }
   }
 
@@ -75,10 +93,16 @@ export default function PairPage() {
     setJoining(true);
     try {
       const { coupleId } = await joinWithCode(fbUser.uid, cleanInput);
-      setMsg(`¡Listo! Pareja creada ✅ (${coupleId})`);
+      setMsg({
+        type: "success",
+        text: `¡Listo! Pareja creada ✅ (${coupleId})`,
+      });
       router.replace("/");
     } catch (e: any) {
-      setMsg(e?.message || "No se pudo unir con ese código.");
+      setMsg({
+        type: "error",
+        text: e?.message || "No se pudo unir con ese código.",
+      });
     } finally {
       setJoining(false);
     }
@@ -86,185 +110,244 @@ export default function PairPage() {
 
   if (loading) {
     return (
-      <main style={styles.main}>
-        <div style={styles.card}>Cargando…</div>
+      <main style={pageStyle}>
+        <AppLoader />
+      </main>
+    );
+  }
+
+  // fondo “bonito” similar al que ya estás usando en AppLoader
+  function Shell({ children }: { children: React.ReactNode }) {
+    return (
+      <main style={pageStyle}>
+        <Container size={520} px="md" w="100%">
+          {children}
+        </Container>
       </main>
     );
   }
 
   if (!fbUser) {
     return (
-      <main style={styles.main}>
-        <div style={styles.card}>
-          <h1 style={styles.h1}>Pair Collection</h1>
-          <p style={styles.p}>
-            Inicia sesión para crear o unirte a una pareja.
-          </p>
+      <Shell>
+        <Card
+          withBorder
+          radius="xl"
+          p="lg"
+          style={{
+            background: "rgba(20,20,32,.92)",
+            borderColor: "rgba(255,255,255,.10)",
+            boxShadow: "0 18px 60px rgba(0,0,0,.45)",
+            backdropFilter: "blur(10px)",
+          }}
+        >
+          <Stack gap="sm">
+            <Title order={2} style={{ letterSpacing: -0.3 }}>
+              Pair Collection
+            </Title>
+            <Text c="dimmed">
+              Inicia sesión para crear o unirte a una pareja.
+            </Text>
 
-          <button style={styles.btn} onClick={loginGoogle}>
-            Continuar con Google
-          </button>
+            <Button
+              leftSection={<IconBrandGoogle size={18} />}
+              radius="lg"
+              size="md"
+              onClick={loginGoogle}
+              variant="white"
+              color="dark"
+            >
+              Continuar con Google
+            </Button>
 
-          <p style={{ ...styles.p, marginTop: 12, opacity: 0.8 }}>
-            (Luego añadimos email/password si quieres)
-          </p>
-        </div>
-      </main>
+            <Text size="sm" c="dimmed">
+              (Luego añadimos email/password si quieres)
+            </Text>
+          </Stack>
+        </Card>
+      </Shell>
     );
   }
 
   return (
-    <main style={styles.main}>
-      <div style={styles.card}>
-        <h1 style={styles.h1}>Vincular pareja</h1>
-        <p style={styles.p}>
-          Crea un código de <b>6 dígitos</b> o únete con uno.
-        </p>
+    <Shell>
+      <Card
+        withBorder
+        radius="xl"
+        p="lg"
+        style={{
+          background: "rgba(20,20,32,.92)",
+          borderColor: "rgba(255,255,255,.10)",
+          boxShadow: "0 18px 60px rgba(0,0,0,.45)",
+          backdropFilter: "blur(10px)",
+        }}
+      >
+        <Stack gap="md">
+          <Stack gap={4}>
+            <Title order={2} style={{ letterSpacing: -0.3 }}>
+              Vincular pareja
+            </Title>
+            <Text c="dimmed">
+              Crea un código de <b>6 dígitos</b> o únete con uno.
+            </Text>
+          </Stack>
 
-        {/* CREAR */}
-        <section style={styles.section}>
-          <h2 style={styles.h2}>Crear código</h2>
-          <button
-            style={styles.btn}
-            onClick={handleCreateCode}
-            disabled={creating}
-          >
-            {creating ? "Generando…" : "Generar código"}
-          </button>
+          {/* CREAR */}
+          <Stack gap="xs">
+            <Title order={4}>Crear código</Title>
 
-          {inviteCode && (
-            <div style={styles.codeBox}>
-              <div style={styles.code}>{inviteCode}</div>
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <button style={styles.btnSecondary} onClick={handleCopy}>
-                  Copiar
-                </button>
-                <button
-                  style={styles.btnSecondary}
-                  onClick={() => {
-                    setInviteCode(null);
-                    setMsg(null);
-                  }}
-                >
-                  Nuevo
-                </button>
-              </div>
-              <p style={{ ...styles.p, marginTop: 10, opacity: 0.8 }}>
-                En MVP puedes decirle el código a tu pareja (WhatsAppxx, chat,
-                etc.).
-              </p>
-            </div>
+            <Button
+              radius="lg"
+              size="md"
+              loading={creating}
+              onClick={handleCreateCode}
+            >
+              Generar código
+            </Button>
+
+            {inviteCode && (
+              <Card
+                radius="lg"
+                p="md"
+                withBorder
+                style={{
+                  background: "rgba(15,15,24,.75)",
+                  borderColor: "rgba(255,255,255,.10)",
+                }}
+              >
+                <Stack gap="sm">
+                  <Group justify="center">
+                    <Code
+                      style={{
+                        fontSize: rem(32),
+                        letterSpacing: rem(6),
+                        fontWeight: 800,
+                        padding: `${rem(10)} ${rem(14)}`,
+                        borderRadius: rem(14),
+                        background: "rgba(255,255,255,.06)",
+                      }}
+                    >
+                      {inviteCode}
+                    </Code>
+                  </Group>
+
+                  <Group grow>
+                    <CopyButton value={inviteCode} timeout={1200}>
+                      {({ copied, copy }) => (
+                        <Button
+                          onClick={() => {
+                            copy();
+                            setMsg({
+                              type: "success",
+                              text: "Código copiado ✅",
+                            });
+                          }}
+                          radius="lg"
+                          variant="light"
+                          leftSection={
+                            copied ? (
+                              <IconCheck size={18} />
+                            ) : (
+                              <IconCopy size={18} />
+                            )
+                          }
+                        >
+                          {copied ? "Copiado" : "Copiar"}
+                        </Button>
+                      )}
+                    </CopyButton>
+
+                    <Button
+                      radius="lg"
+                      variant="default"
+                      onClick={() => {
+                        setInviteCode(null);
+                        setMsg(null);
+                      }}
+                    >
+                      Nuevo
+                    </Button>
+                  </Group>
+
+                  <Text size="sm" c="dimmed">
+                    En MVP puedes decirle el código a tu pareja (WhatsApp, chat,
+                    etc.).
+                  </Text>
+                </Stack>
+              </Card>
+            )}
+          </Stack>
+
+          <Divider opacity={0.25} />
+
+          {/* UNIRSE */}
+          <Stack gap="xs">
+            <Title order={4}>Tengo un código</Title>
+
+            <TextInput
+              value={inputCode}
+              onChange={(e) => setInputCode(e.currentTarget.value)}
+              inputMode="numeric"
+              placeholder="Ej: 123456"
+              maxLength={6}
+              radius="lg"
+              size="md"
+              styles={{
+                input: {
+                  letterSpacing: rem(3),
+                  fontWeight: 700,
+                  background: "rgba(15,15,24,.75)",
+                  borderColor: "rgba(255,255,255,.10)",
+                },
+              }}
+            />
+
+            <Button
+              radius="lg"
+              size="md"
+              onClick={handleJoin}
+              loading={joining}
+              disabled={cleanInput.length !== 6}
+            >
+              Unirme
+            </Button>
+          </Stack>
+
+          {msg && (
+            <Alert
+              radius="lg"
+              variant="light"
+              color={
+                msg.type === "error"
+                  ? "red"
+                  : msg.type === "success"
+                  ? "green"
+                  : "blue"
+              }
+              icon={<IconInfoCircle size={18} />}
+              title={
+                msg.type === "error"
+                  ? "Ups"
+                  : msg.type === "success"
+                  ? "Listo"
+                  : "Info"
+              }
+            >
+              {msg.text}
+            </Alert>
           )}
-        </section>
-
-        <hr style={styles.hr} />
-
-        {/* UNIRSE */}
-        <section style={styles.section}>
-          <h2 style={styles.h2}>Tengo un código</h2>
-
-          <input
-            value={inputCode}
-            onChange={(e) => setInputCode(e.target.value)}
-            inputMode="numeric"
-            placeholder="Ej: 123456"
-            style={styles.input}
-            maxLength={6}
-          />
-
-          <button
-            style={styles.btn}
-            onClick={handleJoin}
-            disabled={joining || cleanInput.length !== 6}
-          >
-            {joining ? "Uniendo…" : "Unirme"}
-          </button>
-        </section>
-
-        {msg && <div style={styles.toast}>{msg}</div>}
-      </div>
-    </main>
+        </Stack>
+      </Card>
+    </Shell>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  main: {
-    minHeight: "100vh",
-    display: "grid",
-    placeItems: "center",
-    padding: 20,
-    background: "#0b0b0f",
-    color: "white",
-  },
-  card: {
-    width: "100%",
-    maxWidth: 480,
-    background: "#141420",
-    border: "1px solid rgba(255,255,255,.08)",
-    borderRadius: 16,
-    padding: 18,
-    boxShadow: "0 12px 40px rgba(0,0,0,.35)",
-  },
-  h1: { fontSize: 22, margin: 0, marginBottom: 6 },
-  h2: { fontSize: 16, margin: 0, marginBottom: 10, opacity: 0.95 },
-  p: { margin: 0, lineHeight: 1.4, opacity: 0.9 },
-  section: { marginTop: 14 },
-  btn: {
-    width: "100%",
-    marginTop: 10,
-    padding: "12px 14px",
-    borderRadius: 12,
-    border: "none",
-    background: "white",
-    color: "#0b0b0f",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  btnSecondary: {
-    flex: 1,
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.15)",
-    background: "transparent",
-    color: "white",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  input: {
-    width: "100%",
-    marginTop: 10,
-    padding: "12px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "#0f0f18",
-    color: "white",
-    fontSize: 16,
-    letterSpacing: 2,
-  },
-  codeBox: {
-    marginTop: 12,
-    padding: 14,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "#0f0f18",
-  },
-  code: {
-    fontSize: 34,
-    letterSpacing: 6,
-    fontWeight: 800,
-    textAlign: "center",
-  },
-  hr: {
-    marginTop: 18,
-    border: "none",
-    borderTop: "1px solid rgba(255,255,255,.10)",
-  },
-  toast: {
-    marginTop: 14,
-    padding: "10px 12px",
-    borderRadius: 12,
-    background: "rgba(255,255,255,.08)",
-    border: "1px solid rgba(255,255,255,.10)",
-    fontSize: 14,
-  },
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  display: "grid",
+  placeItems: "center",
+  padding: 20,
+  color: "white",
+  background:
+    "radial-gradient(1200px 600px at 18% 0%, rgba(255,105,180,0.16), transparent 55%), radial-gradient(1200px 600px at 82% 0%, rgba(99,102,241,0.12), transparent 55%), #0b0b0f",
 };
