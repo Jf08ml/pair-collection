@@ -9,4 +9,5 @@ const withPWAConfig = withPWA({
 
 export default withPWAConfig({
   reactStrictMode: true,
+  turbopack: {},
 });
