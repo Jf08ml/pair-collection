@@ -27,10 +27,10 @@ import {
   IconInfoCircle,
 } from "@tabler/icons-react";
 
-import { auth } from "../lib/firebase";
-import { useUser } from "../context/UserProvider";
-import { createInvite, joinWithCode } from "../lib/invites";
-import { AppLoader } from "../components/AppLoader";
+import { auth } from "../../lib/firebase";
+import { useUser } from "../../context/UserProvider";
+import { createInvite, joinWithCode } from "../../lib/invites";
+import { AppLoader } from "../../components/AppLoader";
 
 export default function PairPage() {
   const router = useRouter();

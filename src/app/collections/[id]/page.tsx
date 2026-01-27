@@ -7,8 +7,6 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ActionIcon,
   Alert,
-  Anchor,
-  Badge,
   Box,
   Button,
   Card,
@@ -19,7 +17,6 @@ import {
   Menu,
   Modal,
   Radio,
-  Select,
   Stack,
   Text,
   Title,
@@ -31,27 +28,25 @@ import { useMediaQuery } from "@mantine/hooks";
 import {
   IconArrowLeft,
   IconDots,
-  IconExternalLink,
   IconInfoCircle,
   IconInbox,
   IconTrash,
 } from "@tabler/icons-react";
 
-import { AuthGate } from "../../components/AuthGate";
-import { ThemeToggle } from "../../components/ThemeToggle";
-import { useUser } from "../../context/UserProvider";
+import { AuthGate } from "../../../components/AuthGate";
+import { ThemeToggle } from "../../../components/ThemeToggle";
+import { useUser } from "../../../context/UserProvider";
 
-import { deleteCollectionDoc, listCollections } from "../../lib/collections";
+import { deleteCollectionDoc, listCollections } from "../../../lib/collections";
 import {
   deleteAllItemsInCollection,
   deleteItem,
-  getDomain,
   listItemsByCollection,
   moveAllItemsToInbox,
   moveItemToCollection,
-} from "../../lib/items";
-import { AppLoader } from "@/app/components/AppLoader";
-
+} from "../../../lib/items";
+import { AppLoader } from "../../../components/AppLoader";
+import { LinkItemCard } from "@/src/components/LinkItemCard";
 export default function CollectionDetailPage() {
   return (
     <AuthGate requireCouple>
@@ -59,6 +54,14 @@ export default function CollectionDetailPage() {
     </AuthGate>
   );
 }
+
+type LinkPreview = {
+  url: string;
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  siteName: string | null;
+};
 
 function CollectionDetailInner() {
   const router = useRouter();
@@ -73,6 +76,9 @@ function CollectionDetailInner() {
   const [loading, setLoading] = useState(true);
   const [movingId, setMovingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [previews, setPreviews] = useState<Record<string, LinkPreview | null>>(
+    {},
+  );
 
   // eliminar colección (modal)
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -161,10 +167,9 @@ function CollectionDetailInner() {
     }
   }
 
-  const title =
-    currentCollection
-      ? `${currentCollection.emoji || "✨"} ${currentCollection.name}`
-      : "Colección";
+  const title = currentCollection
+    ? `${currentCollection.emoji || "✨"} ${currentCollection.name}`
+    : "Colección";
 
   return (
     <Box
@@ -251,7 +256,12 @@ function CollectionDetailInner() {
               {isMobile && (
                 <Menu position="bottom-end" withinPortal>
                   <Menu.Target>
-                    <ActionIcon variant="default" radius="xl" size="lg" aria-label="Opciones">
+                    <ActionIcon
+                      variant="default"
+                      radius="xl"
+                      size="lg"
+                      aria-label="Opciones"
+                    >
                       <IconDots size={18} />
                     </ActionIcon>
                   </Menu.Target>
@@ -298,7 +308,7 @@ function CollectionDetailInner() {
 
           <Card withBorder radius="xl" p="md">
             <Group justify="space-between" align="center" mb="sm">
-              <Text fw={800}>Items  ({loading ? "…" : `${items.length}`})</Text>
+              <Text fw={800}>Items ({loading ? "…" : `${items.length}`})</Text>
               {loading && <Loader size="sm" />}
             </Group>
 
@@ -313,16 +323,18 @@ function CollectionDetailInner() {
             ) : (
               <Stack gap="sm">
                 {items.map((it) => (
-                  <ItemRow
+                  <LinkItemCard
                     key={it.id}
                     item={it}
                     collections={collections}
-                    currentCollectionId={collectionId!}
                     moving={movingId === it.id}
+                    includeInboxInMove
+                    currentCollectionId={collectionId!}
+                    previewCache={previews}
+                    setPreviewCache={setPreviews}
                     onMove={(toId) => onMove(it, toId)}
                     onDelete={async () => {
-                      const ok = window.confirm("¿Eliminar este link?");
-                      if (!ok) return;
+                      if (!window.confirm("¿Eliminar este link?")) return;
 
                       setMovingId(it.id);
                       try {
@@ -333,8 +345,6 @@ function CollectionDetailInner() {
                         });
                         setItems((prev) => prev.filter((x) => x.id !== it.id));
                         setMsg("Eliminado ✅");
-                      } catch (e: any) {
-                        setMsg(e?.message || "No pude eliminar");
                       } finally {
                         setMovingId(null);
                       }
@@ -378,138 +388,16 @@ function CollectionDetailInner() {
             >
               Cancelar
             </Button>
-            <Button color="red" onClick={handleDeleteCollection} loading={deleting}>
+            <Button
+              color="red"
+              onClick={handleDeleteCollection}
+              loading={deleting}
+            >
               Eliminar
             </Button>
           </Group>
         </Stack>
       </Modal>
     </Box>
-  );
-}
-
-function ItemRow(props: {
-  item: any;
-  collections: any[];
-  currentCollectionId: string;
-  moving: boolean;
-  onMove: (toCollectionId: string) => void;
-  onDelete?: () => void;
-}) {
-  const { item, collections, currentCollectionId, moving, onMove, onDelete } = props;
-
-  const theme = useMantineTheme();
-  const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
-
-  const domain = getDomain(item.url);
-  const title = item.title || domain || "Link guardado";
-  const note = item.note || "";
-
-  const moveOptions = [
-    { value: "INBOX", label: "📥 Inbox" },
-    ...collections.map((c) => ({
-      value: c.id,
-      label: `${c.emoji || "✨"} ${c.name}`,
-    })),
-  ];
-
-  return (
-    <Card
-      withBorder
-      radius="lg"
-      p="md"
-      style={{
-        background: "var(--mantine-color-body)",
-        transition: "transform 120ms ease, box-shadow 120ms ease",
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
-        (e.currentTarget as HTMLDivElement).style.boxShadow =
-          "0 10px 24px rgba(0,0,0,0.08)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
-        (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
-      }}
-    >
-      <Group justify="space-between" align="flex-start" wrap="wrap">
-        <Box style={{ minWidth: 0, flex: 1 }}>
-          <Group gap={8} wrap="wrap">
-            <Badge variant="light" radius="xl">
-              {domain || "link"}
-            </Badge>
-
-            <Anchor
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              size="sm"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              Abrir <IconExternalLink size={14} />
-            </Anchor>
-          </Group>
-
-          <Text
-            fw={800}
-            mt={8}
-            title={title}
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {title}
-          </Text>
-
-          {note && (
-            <Text mt={6} size="sm" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
-              {note}
-            </Text>
-          )}
-        </Box>
-
-        {/* Acciones: desktop en fila, mobile apilado */}
-        <Stack
-          gap="sm"
-          style={{
-            width: isMobile ? "100%" : "auto",
-            minWidth: isMobile ? "100%" : 320,
-            maxWidth: isMobile ? "100%" : 360,
-          }}
-        >
-          <Select
-            disabled={moving}
-            value={currentCollectionId}
-            placeholder="Mover a…"
-            data={moveOptions}
-            onChange={(v) => v && onMove(v)}
-            w="100%"
-          />
-
-          <Group justify="flex-end">
-            <Tooltip label="Eliminar" withArrow>
-              <ActionIcon
-                variant="default"
-                disabled={moving}
-                onClick={() => onDelete?.()}
-                size="lg"
-                radius="md"
-                aria-label="Eliminar"
-              >
-                <IconTrash size={18} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        </Stack>
-
-        {moving && (
-          <Text size="xs" c="dimmed">
-            Moviendo…
-          </Text>
-        )}
-      </Group>
-    </Card>
   );
 }

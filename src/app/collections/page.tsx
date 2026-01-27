@@ -14,6 +14,7 @@ import {
   Card,
   Container,
   Divider,
+  Flex,
   Group,
   Loader,
   Modal,
@@ -27,12 +28,17 @@ import {
 } from "@mantine/core";
 
 import { useMediaQuery } from "@mantine/hooks";
-import { IconArrowLeft, IconInfoCircle, IconPlus } from "@tabler/icons-react";
+import {
+  IconArrowLeft,
+  IconInfoCircle,
+  IconPlus,
+  IconChevronRight,
+} from "@tabler/icons-react";
 
-import { AuthGate } from "../components/AuthGate";
-import { ThemeToggle } from "../components/ThemeToggle";
-import { useUser } from "../context/UserProvider";
-import { createCollection, listCollections } from "../lib/collections";
+import { AuthGate } from "../../components/AuthGate";
+import { ThemeToggle } from "../../components/ThemeToggle";
+import { useUser } from "../../context/UserProvider";
+import { createCollection, listCollections } from "../../lib/collections";
 
 export default function CollectionsPage() {
   return (
@@ -110,11 +116,11 @@ function CollectionsInner() {
     const copy = [...collections];
     if (copy.length && copy[0]?.createdAt) {
       copy.sort(
-        (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
+        (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0),
       );
     } else {
       copy.sort((a, b) =>
-        String(a.name || "").localeCompare(String(b.name || ""))
+        String(a.name || "").localeCompare(String(b.name || "")),
       );
     }
     return copy;
@@ -242,7 +248,7 @@ function CollectionsInner() {
 
       {/* FAB en mobile */}
       {isMobile && (
-        <Affix position={{ bottom: 18, right: 18 }}>
+        <Affix position={{ bottom: 100, right: 18 }}>
           <ActionIcon
             size="xl"
             radius="xl"
@@ -313,44 +319,70 @@ function CollectionCard({ c, onOpen }: { c: any; onOpen: () => void }) {
   return (
     <Card
       withBorder
-      radius="lg"
+      radius="xl"
       p="md"
       component="button"
       onClick={onOpen}
       style={{
         textAlign: "left",
         cursor: "pointer",
-        background: "var(--mantine-color-body)",
-        transition: "transform 120ms ease, box-shadow 120ms ease",
+        background:
+          "color-mix(in srgb, var(--mantine-color-body) 92%, transparent)",
+        transition: "transform 140ms ease, box-shadow 140ms ease",
       }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.transform =
-          "translateY(-2px)";
-        (e.currentTarget as HTMLButtonElement).style.boxShadow =
-          "0 10px 24px rgba(0,0,0,0.08)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.transform =
-          "translateY(0)";
-        (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
+      styles={{
+        root: {
+          ":hover": {
+            transform: "translateY(-2px)",
+            boxShadow: "0 12px 26px rgba(0,0,0,0.08)",
+          },
+          ":active": {
+            transform: "translateY(0px)",
+          },
+        },
       }}
     >
       <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <Text style={{ lineHeight: "28px" }}>
-          {c.emoji || "✨"} {c.name || "Sin nombre"}
-        </Text>
+        <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Box
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              display: "grid",
+              placeItems: "center",
+              border: "1px solid var(--mantine-color-default-border)",
+              background:
+                "color-mix(in srgb, var(--mantine-color-body) 86%, transparent)",
+              flex: "0 0 auto",
+              fontSize: 22,
+              lineHeight: "22px",
+            }}
+          >
+            {c.emoji || "✨"}
+          </Box>
 
-        {count !== null && (
-          <Badge variant="light" radius="xl">
-            {count}
-          </Badge>
-        )}
+          <Box style={{ minWidth: 0 }}>
+            <Text fw={800} lineClamp={1}>
+              {c.name || "Sin nombre"}
+            </Text>
+            <Text size="sm" c="dimmed" lineClamp={1}>
+              Abrir colección
+            </Text>
+          </Box>
+        </Group>
+
+        <Group align="center">
+          <Flex gap="xs" align="center">
+            {count !== null && (
+              <Badge variant="light" radius="xl">
+                {count}
+              </Badge>
+            )}
+            <IconChevronRight size={18} />
+          </Flex>
+        </Group>
       </Group>
-
-      {/* nada de texto extra: solo un hint visual */}
-      <Text size="sm" c="dimmed" mt={6}>
-        Abrir →
-      </Text>
     </Card>
   );
 }

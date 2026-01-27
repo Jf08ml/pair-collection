@@ -26,7 +26,10 @@ import {
   Title,
   Tooltip,
   rem,
+  useMantineTheme,
 } from "@mantine/core";
+
+import { useMediaQuery } from "@mantine/hooks";
 
 import {
   IconTrash,
@@ -35,9 +38,8 @@ import {
   IconInfoCircle,
 } from "@tabler/icons-react";
 
-import { AuthGate } from "./components/AuthGate";
-import { ThemeToggle } from "./components/ThemeToggle";
-import { useUser } from "./context/UserProvider";
+import { ThemeToggle } from "../components/ThemeToggle";
+import { useUser } from "../context/UserProvider";
 
 import {
   addItem,
@@ -45,9 +47,10 @@ import {
   listInboxItems,
   moveItemToCollection,
   deleteItem,
-} from "./lib/items";
-import { createCollection, listCollections } from "./lib/collections";
-import { CoupleGate } from "./components/CoupleGate";
+} from "../lib/items";
+import { createCollection, listCollections } from "../lib/collections";
+import { CoupleGate } from "../components/CoupleGate";
+import { LinkItemCard } from "../components/LinkItemCard";
 
 function normalizeUrl(raw: string) {
   let t = (raw || "").trim();
@@ -56,6 +59,14 @@ function normalizeUrl(raw: string) {
   t = t.replace(/\s+/g, "");
   return t;
 }
+
+type LinkPreview = {
+  url: string;
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  siteName: string | null;
+};
 
 export default function HomePage() {
   return (
@@ -68,31 +79,51 @@ export default function HomePage() {
 function InboxInner() {
   const router = useRouter();
   const sp = useSearchParams();
-  const { fbUser, userDoc } = useUser();
 
-  const coupleId = userDoc!.coupleId!;
-  const uid = fbUser!.uid;
+  const { fbUser, userDoc, loading: userLoading } = useUser() as any;
 
-  const sharedUrl = sp.get("sharedUrl") || "";
-  const sharedTitle = sp.get("sharedTitle") || "";
-  const sharedText = sp.get("sharedText") || "";
-
+  // form
   const [url, setUrl] = useState("");
-  const [title, setTitle] = useState(""); // Nuevo estado para el título
+  const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // data
   const [collections, setCollections] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [movingId, setMovingId] = useState<string | null>(null);
+
+  // destination / create collection inline
   const [selectedCollection, setSelectedCollection] = useState("INBOX");
   const [showNewCollection, setShowNewCollection] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");
   const [creatingCollection, setCreatingCollection] = useState(false);
 
+  // previews cache (inbox rows)
+  const [previews, setPreviews] = useState<Record<string, LinkPreview | null>>(
+    {},
+  );
+
+  // share-target params
+  const sharedUrl = sp.get("sharedUrl") || "";
+  const sharedTitle = sp.get("sharedTitle") || "";
+  const sharedText = sp.get("sharedText") || "";
+
   const hasShared = useMemo(() => !!sharedUrl, [sharedUrl]);
+
+  // ready gate
+  const isReady = !!fbUser && !!userDoc && !!userDoc?.coupleId && !userLoading;
+
+  const coupleId = useMemo(
+    () => (isReady ? (userDoc.coupleId as string) : null),
+    [isReady, userDoc],
+  );
+  const uid = useMemo(
+    () => (isReady ? (fbUser.uid as string) : null),
+    [isReady, fbUser],
+  );
 
   const collectionOptions = useMemo(() => {
     return [
@@ -106,6 +137,7 @@ function InboxInner() {
   }, [collections]);
 
   async function refresh() {
+    if (!coupleId) return;
     setLoading(true);
     try {
       const [cols, inbox] = await Promise.all([
@@ -115,6 +147,7 @@ function InboxInner() {
       setCollections(cols);
       setItems(inbox);
 
+      // si la colección seleccionada ya no existe, vuelve a inbox
       if (
         !cols.find((c) => c.id === selectedCollection) &&
         selectedCollection !== "INBOX"
@@ -127,6 +160,7 @@ function InboxInner() {
   }
 
   useEffect(() => {
+    if (!coupleId) return;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coupleId]);
@@ -134,12 +168,14 @@ function InboxInner() {
   useEffect(() => {
     if (!hasShared) return;
     setUrl(normalizeUrl(sharedUrl));
-    setTitle(sharedTitle); // Setear el título compartido si existe
+    setTitle(sharedTitle);
     setNote(sharedText);
   }, [hasShared, sharedUrl, sharedTitle, sharedText]);
 
   async function save() {
     setMsg(null);
+    if (!coupleId || !uid) return setMsg("Cargando usuario…");
+
     const finalUrl = normalizeUrl(url);
     if (!finalUrl) return setMsg("Pega un link primero.");
 
@@ -155,7 +191,7 @@ function InboxInner() {
         coupleId,
         createdBy: uid,
         url: finalUrl,
-        title: title || sharedTitle || null, // Usar el título ingresado si existe
+        title: title || sharedTitle || null,
         note: note || null,
         collectionId: selectedCollection || "INBOX",
       });
@@ -163,7 +199,7 @@ function InboxInner() {
       setMsg("Guardado ✅");
       router.replace("/");
       setUrl("");
-      setTitle(""); // Limpiar el campo título
+      setTitle("");
       setNote("");
       setSelectedCollection("INBOX");
       await refresh();
@@ -176,6 +212,8 @@ function InboxInner() {
 
   async function onMove(item: any, toCollectionId: string) {
     setMsg(null);
+    if (!coupleId) return;
+
     const fromCollectionId = item.collectionId || "INBOX";
     if (fromCollectionId === toCollectionId) return;
 
@@ -188,6 +226,7 @@ function InboxInner() {
         toCollectionId,
       });
 
+      // si se mueve fuera de INBOX, lo removemos de la lista
       if (toCollectionId !== "INBOX") {
         setItems((prev) => prev.filter((x) => x.id !== item.id));
       } else {
@@ -202,7 +241,9 @@ function InboxInner() {
   }
 
   async function handleCreateCollection() {
+    if (!coupleId || !uid) return;
     if (!newCollectionName.trim()) return;
+
     setCreatingCollection(true);
     try {
       const col = (await createCollection({
@@ -211,17 +252,35 @@ function InboxInner() {
         emoji: "✨",
         createdBy: uid,
       })) as { id: string } | string;
+
+      const id = typeof col === "string" ? col : col.id;
+
       setNewCollectionName("");
       setShowNewCollection(false);
       await refresh();
-      setSelectedCollection(
-        typeof col === "string" ? col : (col as { id: string }).id
-      );
+      setSelectedCollection(id);
     } catch (e: any) {
       setMsg(e?.message || "No se pudo crear");
     } finally {
       setCreatingCollection(false);
     }
+  }
+
+  // gate render
+  if (userLoading || (!fbUser && !userDoc)) {
+    return (
+      <Box mih="100vh" style={{ display: "grid", placeItems: "center" }}>
+        <Loader />
+      </Box>
+    );
+  }
+
+  if (!isReady) {
+    return (
+      <Box mih="100vh" style={{ display: "grid", placeItems: "center" }}>
+        <Text c="dimmed">Aún no estás vinculado a una pareja.</Text>
+      </Box>
+    );
   }
 
   return (
@@ -233,7 +292,7 @@ function InboxInner() {
           "radial-gradient(1200px 600px at 18% 0%, rgba(255,105,180,0.16), transparent 55%), radial-gradient(1200px 600px at 82% 0%, rgba(99,102,241,0.12), transparent 55%), var(--mantine-color-body)",
       }}
     >
-      {/* Header compacto */}
+      {/* Header */}
       <Box
         pos="sticky"
         top={0}
@@ -251,9 +310,6 @@ function InboxInner() {
               <Title order={1} size={26} style={{ letterSpacing: -0.6 }}>
                 Inbox 💞
               </Title>
-              <Text size="sm" c="dimmed">
-                {loading ? "…" : `${items.length}`}
-              </Text>
             </Group>
 
             <Group gap="sm">
@@ -272,8 +328,25 @@ function InboxInner() {
 
       <Container size={860} mt="lg">
         <Stack gap="md">
-          {/* Form compacto */}
-          <Paper withBorder radius="xl" p="md">
+          {/* Composer */}
+          <Paper
+            withBorder
+            radius="xl"
+            p="md"
+            style={{
+              background:
+                "color-mix(in srgb, var(--mantine-color-body) 92%, transparent)",
+            }}
+          >
+            <Group justify="space-between" align="center" mb="sm">
+              <Text fw={800}>Guardar un link</Text>
+              {hasShared && (
+                <Badge variant="light" radius="xl">
+                  Compartido ✅
+                </Badge>
+              )}
+            </Group>
+
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
               <TextInput
                 label="Link"
@@ -289,7 +362,7 @@ function InboxInner() {
                 label="Título"
                 value={title}
                 onChange={(e) => setTitle(e.currentTarget.value)}
-                placeholder="Título del link (opcional)"
+                placeholder="Título (opcional)"
                 autoCapitalize="sentences"
                 autoCorrect="on"
               />
@@ -323,24 +396,16 @@ function InboxInner() {
                 <Text size="sm" fw={600} mb={6}>
                   &nbsp;
                 </Text>
-                <Group justify="space-between" align="center">
-                  <Button
-                    onClick={save}
-                    loading={saving}
-                    leftSection={<IconPlus size={16} />}
-                    radius="md"
-                    size="md"
-                    style={{ flex: 1 }}
-                  >
-                    Guardar
-                  </Button>
-
-                  {hasShared && (
-                    <Badge variant="light" radius="xl" ml="sm">
-                      Compartido ✅
-                    </Badge>
-                  )}
-                </Group>
+                <Button
+                  onClick={save}
+                  loading={saving}
+                  leftSection={<IconPlus size={16} />}
+                  radius="xl"
+                  size="md"
+                  fullWidth
+                >
+                  Guardar
+                </Button>
               </Box>
             </SimpleGrid>
 
@@ -360,6 +425,7 @@ function InboxInner() {
                     onClick={handleCreateCollection}
                     loading={creatingCollection}
                     disabled={!newCollectionName.trim()}
+                    radius="xl"
                   >
                     Crear
                   </Button>
@@ -370,6 +436,7 @@ function InboxInner() {
                       setNewCollectionName("");
                     }}
                     disabled={creatingCollection}
+                    radius="xl"
                   >
                     Cancelar
                   </Button>
@@ -389,37 +456,59 @@ function InboxInner() {
             )}
           </Paper>
 
-          {/* Lista */}
-          <Paper withBorder radius="xl" p="md">
+          {/* List */}
+          <Paper
+            withBorder
+            radius="xl"
+            p="md"
+            style={{
+              background:
+                "color-mix(in srgb, var(--mantine-color-body) 92%, transparent)",
+            }}
+          >
             <Group justify="space-between" align="center" mb="sm">
-              <Text fw={800}>Por organizar</Text>
+              <Group gap="sm" align="baseline">
+                <Text fw={800}>Por organizar</Text>
+                <Text size="sm" c="dimmed">
+                  {loading ? "…" : `${items.length}`}
+                </Text>
+              </Group>
               {loading && <Loader size="sm" />}
             </Group>
 
             <Divider mb="sm" />
 
             {loading ? (
-              <Text c="dimmed" size="sm">
-                Cargando…
-              </Text>
-            ) : items.length === 0 ? (
-              <Box py="md">
+              <Stack align="center" py="xl" gap="sm">
+                <Loader />
                 <Text c="dimmed" size="sm">
-                  Guarda un link y lo verán juntos luego ✨
+                  Cargando…
                 </Text>
-              </Box>
+              </Stack>
+            ) : items.length === 0 ? (
+              <Card withBorder radius="xl" p="lg">
+                <Stack gap="xs">
+                  <Text fw={800}>Todo limpio ✨</Text>
+                  <Text c="dimmed" size="sm">
+                    Guarda un link arriba y lo verán juntos luego.
+                  </Text>
+                </Stack>
+              </Card>
             ) : (
               <Stack gap="sm">
                 {items.map((it) => (
-                  <InboxItemRow
+                  <LinkItemCard
                     key={it.id}
                     item={it}
                     collections={collections}
                     moving={movingId === it.id}
+                    includeInboxInMove={false}
+                    previewCache={previews}
+                    setPreviewCache={setPreviews}
                     onMove={(toId) => onMove(it, toId)}
                     onDelete={async () => {
-                      const ok = window.confirm("¿Eliminar este link?");
-                      if (!ok) return;
+                      if (!coupleId) return setMsg("Cargando usuario…");
+                      if (!window.confirm("¿Eliminar este link?")) return;
 
                       setMovingId(it.id);
                       try {
@@ -430,8 +519,6 @@ function InboxInner() {
                         });
                         setItems((prev) => prev.filter((x) => x.id !== it.id));
                         setMsg("Eliminado ✅");
-                      } catch (e: any) {
-                        setMsg(e?.message || "No pude eliminar");
                       } finally {
                         setMovingId(null);
                       }
@@ -444,105 +531,5 @@ function InboxInner() {
         </Stack>
       </Container>
     </Box>
-  );
-}
-
-function InboxItemRow(props: {
-  item: any;
-  collections: any[];
-  moving: boolean;
-  onMove: (toCollectionId: string) => void;
-  onDelete?: () => void;
-}) {
-  const { item, collections, moving, onMove, onDelete } = props;
-
-  const domain = getDomain(item.url);
-  const title = item.title || domain || "Idea guardada";
-  const note = item.note || "";
-
-  const moveOptions = collections.map((c) => ({
-    value: c.id,
-    label: `${c.emoji || "✨"} ${c.name}`,
-  }));
-
-  return (
-    <Card withBorder radius="lg" p="md">
-      <Group justify="space-between" align="flex-start" wrap="wrap">
-        <Box style={{ minWidth: 0, flex: 1 }}>
-          <Group gap={8} wrap="wrap">
-            <Badge variant="light" radius="xl">
-              {domain || "link"}
-            </Badge>
-
-            <Anchor
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              size="sm"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              Abrir <IconExternalLink size={14} />
-            </Anchor>
-          </Group>
-
-          <Text
-            fw={800}
-            mt={8}
-            title={title}
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {title}
-          </Text>
-
-          {note && (
-            <Text
-              mt={6}
-              size="sm"
-              c="dimmed"
-              style={{ whiteSpace: "pre-wrap" }}
-            >
-              {note}
-            </Text>
-          )}
-        </Box>
-
-        <Group
-          gap="sm"
-          align="flex-start"
-          style={{ width: "100%", maxWidth: rem(360) }}
-        >
-          <Select
-            disabled={moving}
-            placeholder="Mover a…"
-            data={moveOptions}
-            onChange={(v) => v && onMove(v)}
-            w="100%"
-          />
-
-          <Tooltip label="Eliminar" withArrow>
-            <ActionIcon
-              variant="default"
-              disabled={moving}
-              onClick={() => onDelete?.()}
-              size="lg"
-              radius="md"
-              aria-label="Eliminar"
-            >
-              <IconTrash size={18} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
-
-        {moving && (
-          <Text size="xs" c="dimmed">
-            Moviendo…
-          </Text>
-        )}
-      </Group>
-    </Card>
   );
 }

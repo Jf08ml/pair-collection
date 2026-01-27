@@ -19,9 +19,9 @@ import {
 } from "@mantine/core";
 import { IconHeart, IconPencil, IconUser } from "@tabler/icons-react";
 
-import { useUser } from "../context/UserProvider"; // ajusta
-import { usePublicProfile } from "../lib/usePublicProfile"; // ajusta
-import { AppLoader } from "../components/AppLoader"; // ajusta
+import { useUser } from "../../context/UserProvider"; // ajusta
+import { usePublicProfile } from "../../lib/usePublicProfile"; // ajusta
+import { AppLoader } from "../../components/AppLoader"; // ajusta
 
 function initials(name?: string | null) {
   if (!name) return "♡";

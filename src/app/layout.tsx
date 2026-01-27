@@ -7,8 +7,8 @@ import {
   mantineHtmlProps,
   createTheme,
 } from "@mantine/core";
-import { UserProvider } from "./context/UserProvider";
-import { BottomBar } from "./components/BottomBar";
+import { UserProvider } from "../context/UserProvider";
+import { BottomBar } from "../components/BottomBar";
 
 export const metadata = {
   title: "Pair Collection",

@@ -22,9 +22,9 @@ import {
   IconSparkles,
 } from "@tabler/icons-react";
 
-import { useUser } from "../context/UserProvider"; // ajusta ruta
-import { useCouplePublicProfiles } from "../lib/couplePublic";
-import { AppLoader } from "../components/AppLoader"; // ajusta ruta
+import { useUser } from "../../context/UserProvider"; // ajusta ruta
+import { useCouplePublicProfiles } from "../../lib/couplePublic";
+import { AppLoader } from "../../components/AppLoader"; // ajusta ruta
 
 function initials(name?: string | null) {
   if (!name) return "♡";
