@@ -305,7 +305,7 @@ export async function listComments(params: {
     "comments"
   );
 
-  const constraints = [orderBy("createdAt", "desc")];
+  const constraints: QueryConstraint[] = [orderBy("createdAt", "desc")];
 
   if (limitCount) {
     constraints.push(firestoreLimit(limitCount));
