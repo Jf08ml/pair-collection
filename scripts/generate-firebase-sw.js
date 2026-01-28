@@ -1,5 +1,13 @@
-// Service Worker para Firebase Cloud Messaging
-// Este archivo debe estar en /public/ para ser accesible
+// Script para generar firebase-messaging-sw.js con variables de entorno
+const fs = require("fs");
+const path = require("path");
+
+// Cargar variables de entorno desde .env.local si existe
+require("dotenv").config({ path: ".env.local" });
+
+const swContent = `// Service Worker para Firebase Cloud Messaging
+// Este archivo se genera automaticamente - NO EDITAR DIRECTAMENTE
+// Edita scripts/generate-firebase-sw.js en su lugar
 
 importScripts(
   "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"
@@ -8,19 +16,17 @@ importScripts(
   "https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js"
 );
 
-// Configuracion de Firebase (valores publicos, no secretos)
 firebase.initializeApp({
-  apiKey: "AIzaSyBeY3B7AgzMntYNmusWVwD18rwWxJQV24A",
-  authDomain: "pair-collection.firebaseapp.com",
-  projectId: "pair-collection",
-  storageBucket: "pair-collection.appspot.com",
-  messagingSenderId: "308812348416",
-  appId: "1:308812348416:web:5255d9b6469e0340966ce5",
+  apiKey: "${process.env.NEXT_PUBLIC_FIREBASE_API_KEY}",
+  authDomain: "${process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}",
+  projectId: "${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}",
+  storageBucket: "${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}",
+  messagingSenderId: "${process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}",
+  appId: "${process.env.NEXT_PUBLIC_FIREBASE_APP_ID}",
 });
 
 const messaging = firebase.messaging();
 
-// Handler para mensajes en background (cuando la app esta cerrada o en segundo plano)
 messaging.onBackgroundMessage((payload) => {
   console.log(
     "[firebase-messaging-sw.js] Background message received:",
@@ -44,31 +50,31 @@ messaging.onBackgroundMessage((payload) => {
   self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-// Handler para clicks en notificacion
 self.addEventListener("notificationclick", (event) => {
   console.log("[firebase-messaging-sw.js] Notification click:", event);
 
   event.notification.close();
 
-  // Si el usuario hizo click en "Descartar", no hacer nada
   if (event.action === "dismiss") return;
 
-  // URL a abrir segun el tipo de notificacion
   const urlToOpen = event.notification.data?.url || "/";
 
   event.waitUntil(
     clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
-        // Si ya hay una ventana abierta de la app, enfocarla y navegar
         for (const client of windowClients) {
           if (client.url.includes(self.location.origin) && "focus" in client) {
             client.navigate(urlToOpen);
             return client.focus();
           }
         }
-        // Si no hay ventana abierta, abrir una nueva
         return clients.openWindow(urlToOpen);
       })
   );
 });
+`;
+
+const outputPath = path.join(__dirname, "../public/firebase-messaging-sw.js");
+fs.writeFileSync(outputPath, swContent);
+console.log("firebase-messaging-sw.js generated successfully");
