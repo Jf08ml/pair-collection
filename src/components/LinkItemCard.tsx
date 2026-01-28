@@ -5,11 +5,14 @@
 import { useMemo } from "react";
 import {
   ActionIcon,
-  Anchor,
+  Avatar,
+  Badge,
   Box,
   Card,
+  Checkbox,
   Group,
   Loader,
+  Menu,
   Select,
   Stack,
   Text,
@@ -17,10 +20,16 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconExternalLink, IconTrash } from "@tabler/icons-react";
+import {
+  IconDots,
+  IconExternalLink,
+  IconTrash,
+  IconFolderSymlink,
+} from "@tabler/icons-react";
 
 import { getDomain } from "../lib/items";
 import { useLinkPreview, type LinkPreview } from "../hooks/useLinkPreview";
+import { CommentsSection } from "./CommentsSection";
 
 type Collection = { id: string; name: string; emoji?: string | null };
 
@@ -32,22 +41,33 @@ function buildMoveOptions(collections: Collection[], includeInbox: boolean) {
   return includeInbox ? [{ value: "INBOX", label: "📥 Inbox" }, ...opts] : opts;
 }
 
+function faviconUrl(domain: string, size = 64) {
+  if (!domain) return "";
+  return `https://www.google.com/s2/favicons?sz=${size}&domain=${encodeURIComponent(
+    domain,
+  )}`;
+}
+
 export function LinkItemCard(props: {
   item: any;
   collections: Collection[];
   moving?: boolean;
 
   includeInboxInMove?: boolean; // INBOX row => false, collection page => true
-  currentCollectionId?: string; // solo para “value” del select si quieres
+  currentCollectionId?: string; // value del select
 
   onMove: (toCollectionId: string) => void;
   onDelete?: () => void;
+  onToggleStatus?: () => void;
 
-  // cache opcional (recomendado para listas)
   previewCache?: Record<string, LinkPreview | null>;
   setPreviewCache?: React.Dispatch<
     React.SetStateAction<Record<string, LinkPreview | null>>
   >;
+
+  // Para comentarios
+  coupleId?: string;
+  currentUserId?: string;
 }) {
   const {
     item,
@@ -57,23 +77,25 @@ export function LinkItemCard(props: {
     currentCollectionId,
     onMove,
     onDelete,
+    onToggleStatus,
     previewCache,
     setPreviewCache,
+    coupleId,
+    currentUserId,
   } = props;
 
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
 
   const domain = getDomain(item.url);
-  const baseTitle = item.title || domain || "Link guardado";
   const note = item.note || "";
+  const isDone = item.status === "done";
 
   const preview = useLinkPreview(item?.url, previewCache, setPreviewCache);
 
   const hasPreview =
     !!preview && (preview?.title || preview?.description || preview?.image);
 
-  const previewTitle = (preview as any)?.title || baseTitle;
   const previewDesc = (preview as any)?.description || "";
   const previewSite = (preview as any)?.siteName || domain || "";
 
@@ -81,6 +103,9 @@ export function LinkItemCard(props: {
     () => buildMoveOptions(collections, includeInboxInMove),
     [collections, includeInboxInMove],
   );
+
+  const thumb = (preview as any)?.image || "";
+  const clickable = { href: item.url, target: "_blank", rel: "noreferrer" };
 
   return (
     <Card
@@ -102,84 +127,135 @@ export function LinkItemCard(props: {
       }}
     >
       <Stack gap="sm">
-        {/* Top: site + actions */}
+        {/* Header: favicon + domain + status + menu */}
         <Group justify="space-between" align="flex-start" wrap="nowrap">
-          <Group gap={8} wrap="wrap">
-            {previewSite ? (
-              <Text size="xs" c="dimmed">
-                {previewSite}
-              </Text>
-            ) : null}
+          <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+            <Avatar
+              radius="xl"
+              size={32}
+              src={domain ? faviconUrl(domain, 64) : undefined}
+              styles={{
+                root: {
+                  border: "1px solid var(--mantine-color-default-border)",
+                  background:
+                    "color-mix(in srgb, var(--mantine-color-body) 90%, transparent)",
+                },
+              }}
+            >
+              🔗
+            </Avatar>
+
+            <Box style={{ minWidth: 0 }}>
+              <Group gap={8} align="center" wrap="wrap">
+                <Text size="xs" c="dimmed" lineClamp={1}>
+                  {previewSite || domain || "Sitio"}
+                </Text>
+
+                <Badge
+                  variant="light"
+                  color={isDone ? "green" : "gray"}
+                  radius="xl"
+                  size="sm"
+                >
+                  {isDone ? "Hecho" : "Pendiente"}
+                </Badge>
+              </Group>
+
+            </Box>
           </Group>
 
-          <Group gap="xs" wrap="nowrap">
-            <Tooltip label="Abrir" withArrow>
-              <ActionIcon
-                variant="default"
-                radius="lg"
-                size="lg"
-                component="a"
-                href={item.url}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Abrir"
+          <Group gap="xs" wrap="nowrap" align="center">
+            {onToggleStatus && (
+              <Tooltip
+                label={isDone ? "Marcar como pendiente" : "Marcar como hecho"}
+                withArrow
               >
-                <IconExternalLink size={18} />
-              </ActionIcon>
-            </Tooltip>
-
-            {onDelete && (
-              <Tooltip label="Eliminar" withArrow>
-                <ActionIcon
-                  variant="default"
-                  radius="lg"
-                  size="lg"
+                <Checkbox
+                  checked={isDone}
+                  onChange={onToggleStatus}
                   disabled={moving}
-                  onClick={onDelete}
-                  aria-label="Eliminar"
-                >
-                  <IconTrash size={18} />
-                </ActionIcon>
+                  radius="xl"
+                  size="md"
+                  aria-label={isDone ? "Marcar como pendiente" : "Marcar como hecho"}
+                />
               </Tooltip>
             )}
+
+            <Menu position="bottom-end" withinPortal>
+              <Menu.Target>
+                <ActionIcon
+                  variant="default"
+                  radius="xl"
+                  size="lg"
+                  aria-label="Acciones"
+                >
+                  <IconDots size={18} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  leftSection={<IconExternalLink size={16} />}
+                  component="a"
+                  {...clickable}
+                >
+                  Abrir
+                </Menu.Item>
+
+                {onDelete && (
+                  <>
+                    <Menu.Divider />
+                    <Menu.Item
+                      color="red"
+                      leftSection={<IconTrash size={16} />}
+                      onClick={onDelete}
+                      disabled={moving}
+                    >
+                      Eliminar
+                    </Menu.Item>
+                  </>
+                )}
+              </Menu.Dropdown>
+            </Menu>
           </Group>
         </Group>
 
-        {/* Preview */}
+        {/* Preview visual (más social) */}
         {hasPreview ? (
           <Card
             withBorder
-            radius="lg"
-            p="sm"
+            radius="xl"
+            p={0}
+            component="a"
+            {...clickable}
             style={{
+              textDecoration: "none",
+              overflow: "hidden",
               background:
-                "color-mix(in srgb, var(--mantine-color-body) 86%, transparent)",
+                "color-mix(in srgb, var(--mantine-color-body) 88%, transparent)",
             }}
           >
-            <Group gap="sm" wrap="nowrap" align="flex-start">
+            <Group wrap="nowrap" gap={0} style={{ alignItems: "stretch" }}>
               {/* Thumb */}
-              {(preview as any)?.image ? (
-                <Box
-                  style={{
-                    width: 96,
-                    height: 64,
-                    borderRadius: 14,
-                    overflow: "hidden",
-                    border: "1px solid var(--mantine-color-default-border)",
-                    flex: "0 0 auto",
-                    background: "var(--mantine-color-dark-7)",
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+              <Box
+                style={{
+                  width: isMobile ? 120 : 160,
+                  minHeight: isMobile ? 86 : 96,
+                  borderRight: "1px solid var(--mantine-color-default-border)",
+                  position: "relative",
+                  background:
+                    "radial-gradient(240px 120px at 30% 0%, rgba(255,105,180,0.14), transparent 60%), radial-gradient(240px 120px at 70% 0%, rgba(99,102,241,0.10), transparent 60%)",
+                }}
+              >
+                {thumb ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={`/api/image-proxy?url=${encodeURIComponent(
-                      (preview as any).image,
-                    )}`}
+                    src={`/api/image-proxy?url=${encodeURIComponent(thumb)}`}
                     alt=""
                     style={{
                       width: "100%",
                       height: "100%",
                       objectFit: "cover",
+                      display: "block",
                     }}
                     loading="lazy"
                     referrerPolicy="no-referrer"
@@ -188,68 +264,60 @@ export function LinkItemCard(props: {
                         "none";
                     }}
                   />
-                </Box>
-              ) : (
+                ) : null}
+
+                {/* overlay suave */}
                 <Box
                   style={{
-                    width: 96,
-                    height: 64,
-                    borderRadius: 14,
-                    border: "1px dashed var(--mantine-color-default-border)",
-                    flex: "0 0 auto",
-                    display: "grid",
-                    placeItems: "center",
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.02))",
+                    pointerEvents: "none",
                   }}
-                >
-                  <IconExternalLink size={18} />
-                </Box>
-              )}
+                />
+              </Box>
 
               {/* Text */}
-              <Box style={{ minWidth: 0, flex: 1 }}>
-                <Anchor
-                  href={item.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  fw={800}
-                  style={{ display: "block", textDecoration: "none" }}
-                >
-                  <Text lineClamp={2}>{previewTitle}</Text>
-                </Anchor>
-
+              <Box p="md" style={{ minWidth: 0, flex: 1 }}>
                 {previewDesc ? (
-                  <Text size="sm" c="dimmed" mt={4} lineClamp={2}>
+                  <Text size="sm" c="dimmed" lineClamp={3}>
                     {previewDesc}
                   </Text>
-                ) : null}
+                ) : (
+                  <Text size="sm" c="dimmed" lineClamp={3}>
+                    Abre el link para ver más.
+                  </Text>
+                )}
+
+                {!!domain && (
+                  <Group mt="sm" gap="xs">
+                    <Badge variant="light" radius="xl">
+                      {domain}
+                    </Badge>
+                    <Badge variant="light" radius="xl">
+                      Ver
+                    </Badge>
+                  </Group>
+                )}
               </Box>
             </Group>
           </Card>
-        ) : (
-          <Anchor
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            fw={800}
-            style={{ textDecoration: "none" }}
-          >
-            <Text lineClamp={2}>{baseTitle}</Text>
-          </Anchor>
-        )}
+        ) : null}
 
-        {/* Note */}
+        {/* Note (caption) */}
         {note ? (
           <Text
             size="sm"
             c="dimmed"
             style={{ whiteSpace: "pre-wrap" }}
-            lineClamp={3}
+            lineClamp={4}
           >
             {note}
           </Text>
         ) : null}
 
-        {/* Move */}
+        {/* Move (acción abajo tipo “share/move”) */}
         <Group
           gap="sm"
           align="center"
@@ -259,10 +327,13 @@ export function LinkItemCard(props: {
           <Select
             disabled={moving}
             placeholder="Mover a…"
+            leftSection={<IconFolderSymlink size={16} />}
             data={moveOptions}
             value={currentCollectionId}
             onChange={(v) => v && onMove(v)}
-            style={{ flex: 1, minWidth: isMobile ? "100%" : 280 }}
+            radius="xl"
+            comboboxProps={{ withinPortal: true }}
+            style={{ flex: 1, minWidth: isMobile ? "100%" : 300 }}
           />
 
           {moving ? (
@@ -273,15 +344,21 @@ export function LinkItemCard(props: {
               </Text>
             </Group>
           ) : (
-            <Text
-              size="xs"
-              c="dimmed"
-              style={{ minWidth: 120, textAlign: "right" }}
-            >
+            <Text size="xs" c="dimmed" style={{ minWidth: 120, textAlign: "right" }}>
               &nbsp;
             </Text>
           )}
         </Group>
+
+        {/* Comentarios */}
+        {coupleId && currentUserId && (
+          <CommentsSection
+            coupleId={coupleId}
+            itemId={item.id}
+            currentUserId={currentUserId}
+            initialCount={item.commentCount || 0}
+          />
+        )}
       </Stack>
     </Card>
   );

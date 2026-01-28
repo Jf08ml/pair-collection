@@ -13,11 +13,19 @@ import {
   Group,
   Modal,
   Stack,
+  Switch,
   Text,
   TextInput,
   Title,
 } from "@mantine/core";
-import { IconHeart, IconPencil, IconUser } from "@tabler/icons-react";
+import {
+  IconBell,
+  IconBellOff,
+  IconHeart,
+  IconPencil,
+  IconUser,
+} from "@tabler/icons-react";
+import { usePushNotifications } from "../../hooks/usePushNotifications";
 
 import { useUser } from "../../context/UserProvider"; // ajusta
 import { usePublicProfile } from "../../lib/usePublicProfile"; // ajusta
@@ -46,6 +54,17 @@ export default function AccountPage() {
   const [opened, setOpened] = useState(false);
   const [nickname, setNickname] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Notificaciones
+  const {
+    isSupported: notifSupported,
+    permissionStatus,
+    preferences: notifPrefs,
+    isLoading: notifLoading,
+    requestPermission,
+    disableNotifications,
+    updatePreferences: updateNotifPrefs,
+  } = usePushNotifications();
 
   const displayName = useMemo(
     () => userDoc?.displayName ?? fbUser?.displayName ?? "Mi cuenta",
@@ -163,10 +182,124 @@ export default function AccountPage() {
               </Group>
 
               <Text size="xs" c="dimmed">
-                El apodo es lo que verá tu pareja en la vista “Mi pareja”.
+                El apodo es lo que verá tu pareja en la vista &quot;Mi pareja&quot;.
               </Text>
             </Stack>
           </Card>
+
+          {/* Notificaciones */}
+          {notifSupported && (
+            <Card
+              radius="xl"
+              withBorder
+              p="xl"
+              style={{
+                backdropFilter: "blur(10px)",
+                backgroundColor: "rgba(255,255,255,0.04)",
+              }}
+            >
+              <Stack gap="lg">
+                <Group justify="space-between" align="center">
+                  <Group gap="sm">
+                    <ActionIcon variant="light" radius="xl" color="pink">
+                      <IconBell size={18} />
+                    </ActionIcon>
+                    <Title order={4}>Notificaciones</Title>
+                  </Group>
+
+                  <Badge
+                    variant="light"
+                    color={
+                      permissionStatus === "granted"
+                        ? "green"
+                        : permissionStatus === "denied"
+                          ? "red"
+                          : "gray"
+                    }
+                    radius="xl"
+                  >
+                    {permissionStatus === "granted"
+                      ? "Activas"
+                      : permissionStatus === "denied"
+                        ? "Bloqueadas"
+                        : "Inactivas"}
+                  </Badge>
+                </Group>
+
+                {permissionStatus === "denied" && (
+                  <Text size="sm" c="dimmed">
+                    Las notificaciones están bloqueadas. Habilítalas en la
+                    configuración del navegador.
+                  </Text>
+                )}
+
+                {permissionStatus === "default" && (
+                  <Button
+                    radius="xl"
+                    variant="light"
+                    leftSection={<IconBell size={18} />}
+                    loading={notifLoading}
+                    onClick={requestPermission}
+                  >
+                    Activar notificaciones
+                  </Button>
+                )}
+
+                {permissionStatus === "granted" && notifPrefs && (
+                  <>
+                    <Divider opacity={0.35} />
+
+                    <Stack gap="md">
+                      <Switch
+                        label="Nuevos links"
+                        description="Cuando tu pareja agregue un link"
+                        checked={notifPrefs.newItems}
+                        onChange={(e) =>
+                          updateNotifPrefs({ newItems: e.currentTarget.checked })
+                        }
+                        disabled={notifLoading}
+                      />
+
+                      <Switch
+                        label="Comentarios"
+                        description="Cuando tu pareja comente en un link"
+                        checked={notifPrefs.comments}
+                        onChange={(e) =>
+                          updateNotifPrefs({ comments: e.currentTarget.checked })
+                        }
+                        disabled={notifLoading}
+                      />
+
+                      <Switch
+                        label="Items completados"
+                        description="Cuando tu pareja marque un item como hecho"
+                        checked={notifPrefs.itemCompleted}
+                        onChange={(e) =>
+                          updateNotifPrefs({
+                            itemCompleted: e.currentTarget.checked,
+                          })
+                        }
+                        disabled={notifLoading}
+                      />
+                    </Stack>
+
+                    <Divider opacity={0.35} />
+
+                    <Button
+                      radius="xl"
+                      variant="subtle"
+                      color="red"
+                      leftSection={<IconBellOff size={18} />}
+                      onClick={disableNotifications}
+                      loading={notifLoading}
+                    >
+                      Desactivar notificaciones
+                    </Button>
+                  </>
+                )}
+              </Stack>
+            </Card>
+          )}
         </Stack>
 
         <Modal

@@ -4,6 +4,7 @@ import {
   doc,
   getDocs,
   increment,
+  limit as firestoreLimit,
   orderBy,
   query,
   runTransaction,
@@ -75,17 +76,47 @@ export async function listItemsByCollection(params: {
   collectionId: string; // "INBOX" o id real
   limit?: number;
 }) {
-  const { coupleId, collectionId } = params;
+  const { coupleId, collectionId, limit } = params;
 
   const ref = collection(db, "couples", coupleId, "items");
-  const q = query(
-    ref,
+  const constraints = [
     where("collectionId", "==", collectionId),
-    orderBy("createdAt", "desc")
-  );
+    orderBy("createdAt", "desc"),
+  ];
+
+  if (limit) {
+    constraints.push(firestoreLimit(limit));
+  }
+
+  const q = query(ref, ...constraints);
 
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+}
+
+/** Obtiene los últimos N items de múltiples colecciones (para previews) */
+export async function getPreviewItemsForCollections(params: {
+  coupleId: string;
+  collectionIds: string[];
+  limitPerCollection?: number;
+}) {
+  const { coupleId, collectionIds, limitPerCollection = 3 } = params;
+
+  const results: Record<string, any[]> = {};
+
+  // Fetch en paralelo para mejor performance
+  await Promise.all(
+    collectionIds.map(async (collectionId) => {
+      const items = await listItemsByCollection({
+        coupleId,
+        collectionId,
+        limit: limitPerCollection,
+      });
+      results[collectionId] = items;
+    })
+  );
+
+  return results;
 }
 
 /**
@@ -182,6 +213,20 @@ export async function deleteAllItemsInCollection(params: {
   return snap.size;
 }
 
+/** Cambia el status de un item (pending ↔ done) */
+export async function toggleItemStatus(params: {
+  coupleId: string;
+  itemId: string;
+  newStatus: "pending" | "done";
+}) {
+  const { coupleId, itemId, newStatus } = params;
+  const itemRef = doc(db, "couples", coupleId, "items", itemId);
+
+  return await runTransaction(db, async (tx) => {
+    tx.update(itemRef, { status: newStatus });
+  });
+}
+
 /** Helper pequeño para UI */
 export function getDomain(url?: string) {
   try {
@@ -191,4 +236,112 @@ export function getDomain(url?: string) {
   } catch {
     return "";
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// COMENTARIOS
+// ─────────────────────────────────────────────────────────────
+
+export type Comment = {
+  id: string;
+  text: string;
+  authorId: string;
+  createdAt: any; // Firestore Timestamp
+};
+
+/** Agrega un comentario a un item */
+export async function addComment(params: {
+  coupleId: string;
+  itemId: string;
+  text: string;
+  authorId: string;
+}) {
+  const { coupleId, itemId, text, authorId } = params;
+
+  const trimmed = (text || "").trim();
+  if (!trimmed) throw new Error("El comentario no puede estar vacío");
+
+  const commentsRef = collection(
+    db,
+    "couples",
+    coupleId,
+    "items",
+    itemId,
+    "comments"
+  );
+
+  const newCommentRef = doc(commentsRef);
+
+  return await runTransaction(db, async (tx) => {
+    tx.set(newCommentRef, {
+      text: trimmed,
+      authorId,
+      createdAt: serverTimestamp(),
+    });
+
+    // Opcional: incrementar contador de comentarios en el item
+    const itemRef = doc(db, "couples", coupleId, "items", itemId);
+    tx.set(itemRef, { commentCount: increment(1) }, { merge: true });
+
+    return newCommentRef.id;
+  });
+}
+
+/** Lista los comentarios de un item (más recientes primero) */
+export async function listComments(params: {
+  coupleId: string;
+  itemId: string;
+  limitCount?: number;
+}) {
+  const { coupleId, itemId, limitCount } = params;
+
+  const commentsRef = collection(
+    db,
+    "couples",
+    coupleId,
+    "items",
+    itemId,
+    "comments"
+  );
+
+  const constraints = [orderBy("createdAt", "desc")];
+
+  if (limitCount) {
+    constraints.push(firestoreLimit(limitCount));
+  }
+
+  const q = query(commentsRef, ...constraints);
+  const snap = await getDocs(q);
+
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<Comment, "id">),
+  })) as Comment[];
+}
+
+/** Elimina un comentario */
+export async function deleteComment(params: {
+  coupleId: string;
+  itemId: string;
+  commentId: string;
+}) {
+  const { coupleId, itemId, commentId } = params;
+
+  const commentRef = doc(
+    db,
+    "couples",
+    coupleId,
+    "items",
+    itemId,
+    "comments",
+    commentId
+  );
+
+  return await runTransaction(db, async (tx) => {
+    tx.delete(commentRef);
+
+    // Decrementar contador
+    const itemRef = doc(db, "couples", coupleId, "items", itemId);
+    tx.set(itemRef, { commentCount: increment(-1) }, { merge: true });
+  });
 }

@@ -7,7 +7,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ActionIcon,
   Alert,
-  Anchor,
   Badge,
   Box,
   Button,
@@ -16,7 +15,9 @@ import {
   Divider,
   Group,
   Loader,
+  Modal,
   Paper,
+  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -24,18 +25,14 @@ import {
   TextInput,
   Textarea,
   Title,
-  Tooltip,
   rem,
-  useMantineTheme,
 } from "@mantine/core";
 
-import { useMediaQuery } from "@mantine/hooks";
-
 import {
-  IconTrash,
-  IconExternalLink,
   IconPlus,
   IconInfoCircle,
+  IconFolderPlus,
+  IconBookmark,
 } from "@tabler/icons-react";
 
 import { ThemeToggle } from "../components/ThemeToggle";
@@ -43,14 +40,15 @@ import { useUser } from "../context/UserProvider";
 
 import {
   addItem,
-  getDomain,
   listInboxItems,
   moveItemToCollection,
   deleteItem,
+  toggleItemStatus,
 } from "../lib/items";
 import { createCollection, listCollections } from "../lib/collections";
 import { CoupleGate } from "../components/CoupleGate";
 import { LinkItemCard } from "../components/LinkItemCard";
+import { NotificationPermissionBanner } from "../components/NotificationPermissionBanner";
 
 function normalizeUrl(raw: string) {
   let t = (raw || "").trim();
@@ -95,15 +93,22 @@ function InboxInner() {
   const [loading, setLoading] = useState(true);
   const [movingId, setMovingId] = useState<string | null>(null);
 
-  // destination / create collection inline
+  // destination
   const [selectedCollection, setSelectedCollection] = useState("INBOX");
-  const [showNewCollection, setShowNewCollection] = useState(false);
+
+  // create collection modal
+  const [collectionModalOpen, setCollectionModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");
   const [creatingCollection, setCreatingCollection] = useState(false);
 
   // previews cache (inbox rows)
   const [previews, setPreviews] = useState<Record<string, LinkPreview | null>>(
     {},
+  );
+
+  // filtro de status
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "done">(
+    "all",
   );
 
   // share-target params
@@ -132,9 +137,14 @@ function InboxInner() {
         value: c.id,
         label: `${c.emoji || "✨"} ${c.name}`,
       })),
-      { value: "__new__", label: "➕ Nueva colección…" },
+      { value: "__new__", label: "➕ Crear colección…" },
     ];
   }, [collections]);
+
+  const filteredItems = useMemo(() => {
+    if (statusFilter === "all") return items;
+    return items.filter((it) => it.status === statusFilter);
+  }, [items, statusFilter]);
 
   async function refresh() {
     if (!coupleId) return;
@@ -240,6 +250,29 @@ function InboxInner() {
     }
   }
 
+  async function handleToggleStatus(item: any) {
+    if (!coupleId) return;
+    const newStatus = item.status === "done" ? "pending" : "done";
+    setMovingId(item.id);
+    try {
+      await toggleItemStatus({ coupleId, itemId: item.id, newStatus });
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === item.id ? { ...it, status: newStatus } : it,
+        ),
+      );
+    } catch (e: any) {
+      setMsg(e?.message || "No pude cambiar el estado");
+    } finally {
+      setMovingId(null);
+    }
+  }
+
+  function openCreateCollectionModal() {
+    setCollectionModalOpen(true);
+    setNewCollectionName("");
+  }
+
   async function handleCreateCollection() {
     if (!coupleId || !uid) return;
     if (!newCollectionName.trim()) return;
@@ -255,10 +288,11 @@ function InboxInner() {
 
       const id = typeof col === "string" ? col : col.id;
 
+      setCollectionModalOpen(false);
       setNewCollectionName("");
-      setShowNewCollection(false);
       await refresh();
       setSelectedCollection(id);
+      setMsg("Colección creada ✨");
     } catch (e: any) {
       setMsg(e?.message || "No se pudo crear");
     } finally {
@@ -292,24 +326,79 @@ function InboxInner() {
           "radial-gradient(1200px 600px at 18% 0%, rgba(255,105,180,0.16), transparent 55%), radial-gradient(1200px 600px at 82% 0%, rgba(99,102,241,0.12), transparent 55%), var(--mantine-color-body)",
       }}
     >
+      {/* Create collection modal */}
+      <Modal
+        opened={collectionModalOpen}
+        onClose={() => setCollectionModalOpen(false)}
+        title={
+          <Group gap="sm">
+            <IconFolderPlus size={18} />
+            <Text fw={800}>Nueva colección</Text>
+          </Group>
+        }
+        centered
+        radius="lg"
+      >
+        <Stack gap="sm">
+          <Text c="dimmed" size="sm">
+            Dale un nombre corto y fácil de recordar (ej: “Citas”,
+            “Restaurantes”, “Películas”).
+          </Text>
+
+          <TextInput
+            label="Nombre"
+            placeholder="Ej: Planes del finde"
+            value={newCollectionName}
+            onChange={(e) => setNewCollectionName(e.currentTarget.value)}
+            autoFocus
+            disabled={creatingCollection}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreateCollection();
+            }}
+          />
+
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              radius="xl"
+              onClick={() => setCollectionModalOpen(false)}
+              disabled={creatingCollection}
+            >
+              Cancelar
+            </Button>
+            <Button
+              radius="xl"
+              leftSection={<IconPlus size={16} />}
+              onClick={handleCreateCollection}
+              loading={creatingCollection}
+              disabled={!newCollectionName.trim()}
+            >
+              Crear
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
       {/* Header */}
       <Box
         pos="sticky"
         top={0}
         style={{
           zIndex: 10,
-          backdropFilter: "blur(10px)",
+          backdropFilter: "blur(12px)",
           background:
             "color-mix(in srgb, var(--mantine-color-body) 78%, transparent)",
           borderBottom: "1px solid var(--mantine-color-default-border)",
         }}
       >
-        <Container size={860} py="md">
-          <Group justify="space-between" align="center">
-            <Group gap="sm" align="baseline">
-              <Title order={1} size={26} style={{ letterSpacing: -0.6 }}>
-                Inbox 💞
-              </Title>
+        <Container size={920} py="md">
+          <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+            <Group gap="sm" align="center">
+              <Box>
+                <Title order={1} size={24} style={{ letterSpacing: -0.6 }}>
+                  Inbox 💞
+                </Title>
+              </Box>
             </Group>
 
             <Group gap="sm">
@@ -323,12 +412,13 @@ function InboxInner() {
               </Button>
             </Group>
           </Group>
+          
         </Container>
       </Box>
 
-      <Container size={860} mt="lg">
+      <Container size={920} mt="lg">
         <Stack gap="md">
-          {/* Composer */}
+          {/* Composer (social post style) */}
           <Paper
             withBorder
             radius="xl"
@@ -338,125 +428,115 @@ function InboxInner() {
                 "color-mix(in srgb, var(--mantine-color-body) 92%, transparent)",
             }}
           >
-            <Group justify="space-between" align="center" mb="sm">
-              <Text fw={800}>Guardar un link</Text>
-              {hasShared && (
-                <Badge variant="light" radius="xl">
-                  Compartido ✅
-                </Badge>
-              )}
+            <Group justify="space-between" align="center">
+              <Group gap="xs">
+                <IconBookmark size={18} />
+                <Text fw={900}>Nuevo guardado</Text>
+              </Group>
+
+              <Group gap="xs">
+                {hasShared && (
+                  <Badge variant="light" radius="xl">
+                    Compartido ✅
+                  </Badge>
+                )}
+
+                <ActionIcon
+                  variant="light"
+                  radius="xl"
+                  size="lg"
+                  title="Crear colección"
+                  onClick={openCreateCollectionModal}
+                >
+                  <IconFolderPlus size={18} />
+                </ActionIcon>
+              </Group>
             </Group>
 
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+            <Divider my="sm" />
+
+            <Stack gap="sm">
               <TextInput
-                label="Link"
                 value={url}
                 onChange={(e) => setUrl(e.currentTarget.value)}
-                placeholder="Pega un link…"
+                placeholder="Pega un link… (ej: YouTube, TikTok, artículo, lugar, producto)"
                 inputMode="url"
                 autoCapitalize="none"
                 autoCorrect="off"
+                radius="lg"
+                size="md"
               />
 
-              <TextInput
-                label="Título"
-                value={title}
-                onChange={(e) => setTitle(e.currentTarget.value)}
-                placeholder="Título (opcional)"
-                autoCapitalize="sentences"
-                autoCorrect="on"
-              />
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                <TextInput
+                  value={title}
+                  onChange={(e) => setTitle(e.currentTarget.value)}
+                  placeholder="Ponle un título (opcional)"
+                  autoCapitalize="sentences"
+                  autoCorrect="on"
+                  radius="lg"
+                />
 
-              <Select
-                label="Destino"
-                value={selectedCollection}
-                onChange={(v) => {
-                  const val = v || "INBOX";
-                  if (val === "__new__") setShowNewCollection(true);
-                  else {
-                    setSelectedCollection(val);
-                    setShowNewCollection(false);
-                  }
-                }}
-                data={collectionOptions}
-                searchable={false}
-              />
+                <Select
+                  value={selectedCollection}
+                  onChange={(v) => {
+                    const val = v || "INBOX";
+                    if (val === "__new__") {
+                      openCreateCollectionModal();
+                      // vuelve a INBOX hasta que cree la colección (evita quedarse en __new__)
+                      setSelectedCollection("INBOX");
+                    } else {
+                      setSelectedCollection(val);
+                    }
+                  }}
+                  data={collectionOptions}
+                  searchable={false}
+                  radius="lg"
+                />
+              </SimpleGrid>
 
               <Textarea
-                label="Nota"
                 value={note}
                 onChange={(e) => setNote(e.currentTarget.value)}
-                placeholder="Opcional…"
+                placeholder="Añade una nota tipo caption… (por qué lo guardas, para cuándo, con quién, etc)"
                 autosize
                 minRows={2}
-                maxRows={4}
+                maxRows={5}
+                radius="lg"
               />
 
-              <Box>
-                <Text size="sm" fw={600} mb={6}>
-                  &nbsp;
+              <Group justify="space-between" align="center" wrap="wrap">
+                <Text size="sm" c="dimmed">
+                  Tip: pega el link y guarda — luego lo mueves a una colección.
                 </Text>
+
                 <Button
                   onClick={save}
                   loading={saving}
                   leftSection={<IconPlus size={16} />}
                   radius="xl"
                   size="md"
-                  fullWidth
                 >
                   Guardar
                 </Button>
-              </Box>
-            </SimpleGrid>
+              </Group>
 
-            {showNewCollection && (
-              <Card withBorder radius="lg" p="md" mt="sm">
-                <Group gap="sm" align="flex-end" wrap="wrap">
-                  <TextInput
-                    value={newCollectionName}
-                    onChange={(e) =>
-                      setNewCollectionName(e.currentTarget.value)
-                    }
-                    placeholder="Nombre de la colección"
-                    disabled={creatingCollection}
-                    style={{ flex: 1, minWidth: rem(220) }}
-                  />
-                  <Button
-                    onClick={handleCreateCollection}
-                    loading={creatingCollection}
-                    disabled={!newCollectionName.trim()}
-                    radius="xl"
-                  >
-                    Crear
-                  </Button>
-                  <Button
-                    variant="default"
-                    onClick={() => {
-                      setShowNewCollection(false);
-                      setNewCollectionName("");
-                    }}
-                    disabled={creatingCollection}
-                    radius="xl"
-                  >
-                    Cancelar
-                  </Button>
-                </Group>
-              </Card>
-            )}
-
-            {msg && (
-              <Alert
-                mt="sm"
-                radius="lg"
-                variant="light"
-                icon={<IconInfoCircle size={16} />}
-              >
-                {msg}
-              </Alert>
-            )}
+              {msg && (
+                <Alert
+                  radius="lg"
+                  variant="light"
+                  icon={<IconInfoCircle size={16} />}
+                >
+                  {msg}
+                </Alert>
+              )}
+            </Stack>
           </Paper>
 
-          {/* List */}
+          {/* Banner de notificaciones */}
+          <NotificationPermissionBanner />
+
+          {/* Feed */}
           <Paper
             withBorder
             radius="xl"
@@ -466,14 +546,36 @@ function InboxInner() {
                 "color-mix(in srgb, var(--mantine-color-body) 92%, transparent)",
             }}
           >
-            <Group justify="space-between" align="center" mb="sm">
+            <Group
+              justify="space-between"
+              align="center"
+              mb="sm"
+              wrap="wrap"
+              gap="sm"
+            >
               <Group gap="sm" align="baseline">
-                <Text fw={800}>Por organizar</Text>
-                <Text size="sm" c="dimmed">
-                  {loading ? "…" : `${items.length}`}
-                </Text>
+                <Text fw={900}>Feed</Text>
+                <Badge variant="light" radius="xl">
+                  {loading ? "…" : `${filteredItems.length}`}
+                </Badge>
               </Group>
-              {loading && <Loader size="sm" />}
+
+              <Group gap="sm" align="center">
+                <SegmentedControl
+                  size="xs"
+                  radius="xl"
+                  value={statusFilter}
+                  onChange={(v) =>
+                    setStatusFilter(v as "all" | "pending" | "done")
+                  }
+                  data={[
+                    { value: "all", label: "Todos" },
+                    { value: "pending", label: "Pendientes" },
+                    { value: "done", label: "Hechos" },
+                  ]}
+                />
+                {loading && <Loader size="sm" />}
+              </Group>
             </Group>
 
             <Divider mb="sm" />
@@ -485,18 +587,24 @@ function InboxInner() {
                   Cargando…
                 </Text>
               </Stack>
-            ) : items.length === 0 ? (
+            ) : filteredItems.length === 0 ? (
               <Card withBorder radius="xl" p="lg">
                 <Stack gap="xs">
-                  <Text fw={800}>Todo limpio ✨</Text>
+                  <Text fw={900}>
+                    {statusFilter === "all"
+                      ? "Todo limpio ✨"
+                      : "Sin items en este filtro"}
+                  </Text>
                   <Text c="dimmed" size="sm">
-                    Guarda un link arriba y lo verán juntos luego.
+                    {statusFilter === "all"
+                      ? "Guarda algo arriba y aparecerá aquí como un post."
+                      : "Cambia el filtro para ver otros items."}
                   </Text>
                 </Stack>
               </Card>
             ) : (
               <Stack gap="sm">
-                {items.map((it) => (
+                {filteredItems.map((it) => (
                   <LinkItemCard
                     key={it.id}
                     item={it}
@@ -505,7 +613,10 @@ function InboxInner() {
                     includeInboxInMove={false}
                     previewCache={previews}
                     setPreviewCache={setPreviews}
+                    coupleId={coupleId || undefined}
+                    currentUserId={uid || undefined}
                     onMove={(toId) => onMove(it, toId)}
+                    onToggleStatus={() => handleToggleStatus(it)}
                     onDelete={async () => {
                       if (!coupleId) return setMsg("Cargando usuario…");
                       if (!window.confirm("¿Eliminar este link?")) return;
@@ -528,6 +639,9 @@ function InboxInner() {
               </Stack>
             )}
           </Paper>
+
+          {/* Little bottom spacing */}
+          <Box h={rem(8)} />
         </Stack>
       </Container>
     </Box>

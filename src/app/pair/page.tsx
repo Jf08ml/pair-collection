@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 
 import {
   Alert,
@@ -21,13 +20,11 @@ import {
   rem,
 } from "@mantine/core";
 import {
-  IconBrandGoogle,
   IconCheck,
   IconCopy,
   IconInfoCircle,
 } from "@tabler/icons-react";
 
-import { auth } from "../../lib/firebase";
 import { useUser } from "../../context/UserProvider";
 import { createInvite, joinWithCode } from "../../lib/invites";
 import { AppLoader } from "../../components/AppLoader";
@@ -49,7 +46,14 @@ export default function PairPage() {
   const hasCouple = !!userDoc?.coupleId;
 
   useEffect(() => {
-    if (!loading && fbUser && hasCouple) {
+    if (loading) return;
+
+    if (!fbUser) {
+      router.replace("/login");
+      return;
+    }
+
+    if (hasCouple) {
       router.replace("/"); // ya tiene pareja
     }
   }, [loading, fbUser, hasCouple, router]);
@@ -62,12 +66,6 @@ export default function PairPage() {
     () => inputCode.replace(/\D/g, "").slice(0, 6),
     [inputCode]
   );
-
-  async function loginGoogle() {
-    setMsg(null);
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  }
 
   async function handleCreateCode() {
     if (!fbUser) return;
@@ -127,45 +125,12 @@ export default function PairPage() {
     );
   }
 
+  // Si no hay usuario, el useEffect redirige a /login
   if (!fbUser) {
     return (
-      <Shell>
-        <Card
-          withBorder
-          radius="xl"
-          p="lg"
-          style={{
-            background: "rgba(20,20,32,.92)",
-            borderColor: "rgba(255,255,255,.10)",
-            boxShadow: "0 18px 60px rgba(0,0,0,.45)",
-            backdropFilter: "blur(10px)",
-          }}
-        >
-          <Stack gap="sm">
-            <Title order={2} style={{ letterSpacing: -0.3 }}>
-              Pair Collection
-            </Title>
-            <Text c="dimmed">
-              Inicia sesión para crear o unirte a una pareja.
-            </Text>
-
-            <Button
-              leftSection={<IconBrandGoogle size={18} />}
-              radius="lg"
-              size="md"
-              onClick={loginGoogle}
-              variant="white"
-              color="dark"
-            >
-              Continuar con Google
-            </Button>
-
-            <Text size="sm" c="dimmed">
-              (Luego añadimos email/password si quieres)
-            </Text>
-          </Stack>
-        </Card>
-      </Shell>
+      <main style={pageStyle}>
+        <AppLoader />
+      </main>
     );
   }
 

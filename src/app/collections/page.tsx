@@ -14,7 +14,6 @@ import {
   Card,
   Container,
   Divider,
-  Flex,
   Group,
   Loader,
   Modal,
@@ -32,13 +31,17 @@ import {
   IconArrowLeft,
   IconInfoCircle,
   IconPlus,
-  IconChevronRight,
+  IconSearch,
+  IconFolderPlus,
+  IconLink,
 } from "@tabler/icons-react";
 
 import { AuthGate } from "../../components/AuthGate";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { useUser } from "../../context/UserProvider";
 import { createCollection, listCollections } from "../../lib/collections";
+import { getPreviewItemsForCollections } from "../../lib/items";
+import { useLinkPreview, type LinkPreview } from "../../hooks/useLinkPreview";
 
 export default function CollectionsPage() {
   return (
@@ -57,12 +60,19 @@ function CollectionsInner() {
 
   const [collections, setCollections] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [previewItems, setPreviewItems] = useState<Record<string, any[]>>({});
+  const [previewCache, setPreviewCache] = useState<
+    Record<string, LinkPreview | null>
+  >({});
 
   const [showNew, setShowNew] = useState(false);
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("✨");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // social feel: search
+  const [q, setQ] = useState("");
 
   const total = useMemo(() => collections.length, [collections]);
 
@@ -74,6 +84,17 @@ function CollectionsInner() {
     try {
       const cols = await listCollections(coupleId);
       setCollections(cols);
+
+      // Cargar preview items para todas las colecciones
+      if (cols.length > 0) {
+        const collectionIds = cols.map((c: any) => c.id);
+        const previews = await getPreviewItemsForCollections({
+          coupleId,
+          collectionIds,
+          limitPerCollection: 3,
+        });
+        setPreviewItems(previews);
+      }
     } finally {
       setLoading(false);
     }
@@ -83,6 +104,13 @@ function CollectionsInner() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coupleId]);
+
+  function openNewModal() {
+    setMsg(null);
+    setShowNew(true);
+    // no reseteo agresivo si ya estabas escribiendo
+    if (!emoji) setEmoji("✨");
+  }
 
   async function onCreate() {
     setMsg(null);
@@ -126,6 +154,15 @@ function CollectionsInner() {
     return copy;
   }, [collections]);
 
+  const visibleCols = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    if (!t) return cols;
+    return cols.filter((c) => {
+      const hay = `${c?.name || ""} ${c?.emoji || ""}`.toLowerCase();
+      return hay.includes(t);
+    });
+  }, [cols, q]);
+
   return (
     <Box
       mih="100vh"
@@ -141,32 +178,15 @@ function CollectionsInner() {
         top={0}
         style={{
           zIndex: 10,
-          backdropFilter: "blur(10px)",
+          backdropFilter: "blur(12px)",
           background:
             "color-mix(in srgb, var(--mantine-color-body) 78%, transparent)",
           borderBottom: "1px solid var(--mantine-color-default-border)",
         }}
       >
         <Container size={980} py="md">
-          <Group justify="space-between" align="center">
-            <Group gap="sm" align="baseline" style={{ minWidth: 0 }}>
-              <Title
-                order={1}
-                size={26}
-                style={{
-                  letterSpacing: -0.6,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Colecciones ✨
-              </Title>
-            </Group>
-
-            <Group gap="sm">
-              <ThemeToggle />
-
+          <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+            <Group gap="sm" align="center" style={{ minWidth: 0 }}>
               <Tooltip label="Volver al Inbox" withArrow>
                 <ActionIcon
                   variant="default"
@@ -179,15 +199,32 @@ function CollectionsInner() {
                 </ActionIcon>
               </Tooltip>
 
-              {/* En desktop mostramos botón; en mobile lo convertimos en FAB */}
+              <Box style={{ minWidth: 0 }}>
+                <Group gap="xs" align="baseline" wrap="nowrap">
+                  <Title
+                    order={1}
+                    size={24}
+                    style={{
+                      letterSpacing: -0.6,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Colecciones
+                  </Title>
+                </Group>
+              </Box>
+            </Group>
+
+            <Group gap="sm">
+              <ThemeToggle />
+
               {!isMobile && (
                 <Button
                   radius="xl"
                   leftSection={<IconPlus size={16} />}
-                  onClick={() => {
-                    setMsg(null);
-                    setShowNew(true);
-                  }}
+                  onClick={openNewModal}
                 >
                   Nueva
                 </Button>
@@ -209,35 +246,104 @@ function CollectionsInner() {
             </Alert>
           )}
 
+          {/* Search + hint row (social explore feel) */}
+          <Card
+            withBorder
+            radius="xl"
+            p="md"
+            style={{
+              background:
+                "color-mix(in srgb, var(--mantine-color-body) 92%, transparent)",
+            }}
+          >
+            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+              <Text fw={900}>
+                Explorar{" "}
+                <Badge variant="light">
+                  {visibleCols.length}/{loading ? "…" : total} visibles
+                </Badge>
+              </Text>
+
+              <Group gap="xs" align="center">
+                {loading && <Loader size="sm" />}
+              </Group>
+            </Group>
+
+            <Divider my="sm" />
+
+            <TextInput
+              value={q}
+              onChange={(e) => setQ(e.currentTarget.value)}
+              placeholder='Buscar… (ej: "Viajes", "🍜", "Compras")'
+              leftSection={<IconSearch size={16} />}
+              radius="xl"
+            />
+          </Card>
+
+          {/* Grid */}
           <Card withBorder radius="xl" p="md">
             <Group justify="space-between" align="center" mb="sm">
-              <Text fw={800}>
-                Tus colecciones ({loading ? "…" : `${total}`})
-              </Text>
-              {loading && <Loader size="sm" />}
+              <Text fw={900}>Tus colecciones</Text>
+              {!loading && cols.length === 0 && (
+                <Button
+                  radius="xl"
+                  variant="light"
+                  leftSection={<IconFolderPlus size={16} />}
+                  onClick={openNewModal}
+                >
+                  Crear la primera
+                </Button>
+              )}
             </Group>
 
             <Divider mb="sm" />
 
             {loading ? (
-              <Text c="dimmed" size="sm">
-                Cargando…
-              </Text>
-            ) : cols.length === 0 ? (
-              <Text c="dimmed" size="sm">
-                Crea una colección con “Nueva”.
-              </Text>
+              <Stack align="center" py="xl" gap="sm">
+                <Loader />
+                <Text c="dimmed" size="sm">
+                  Cargando…
+                </Text>
+              </Stack>
+            ) : visibleCols.length === 0 ? (
+              <Card withBorder radius="xl" p="lg">
+                <Stack gap="xs">
+                  <Text fw={900}>No encontré colecciones con “{q.trim()}”</Text>
+                  <Text c="dimmed" size="sm">
+                    Prueba otro término o crea una nueva.
+                  </Text>
+                  <Group mt="xs">
+                    <Button
+                      radius="xl"
+                      onClick={() => setQ("")}
+                      variant="default"
+                    >
+                      Limpiar búsqueda
+                    </Button>
+                    <Button
+                      radius="xl"
+                      onClick={openNewModal}
+                      leftSection={<IconPlus size={16} />}
+                    >
+                      Nueva
+                    </Button>
+                  </Group>
+                </Stack>
+              </Card>
             ) : (
               <SimpleGrid
-                cols={{ base: 1, xs: 2, sm: 3, md: 4 }}
+                cols={{ base: 2 }}
                 spacing={{ base: "sm", sm: "md" }}
                 verticalSpacing={{ base: "sm", sm: "md" }}
               >
-                {cols.map((c) => (
+                {visibleCols.map((c) => (
                   <CollectionCard
                     key={c.id}
                     c={c}
                     onOpen={() => router.push(`/collections/${c.id}`)}
+                    previewItems={previewItems[c.id] || []}
+                    previewCache={previewCache}
+                    setPreviewCache={setPreviewCache}
                   />
                 ))}
               </SimpleGrid>
@@ -253,10 +359,7 @@ function CollectionsInner() {
             size="xl"
             radius="xl"
             variant="filled"
-            onClick={() => {
-              setMsg(null);
-              setShowNew(true);
-            }}
+            onClick={openNewModal}
             aria-label="Nueva colección"
           >
             <IconPlus size={22} />
@@ -268,64 +371,124 @@ function CollectionsInner() {
       <Modal
         opened={showNew}
         onClose={() => setShowNew(false)}
-        title={<Text fw={800}>Nueva colección</Text>}
+        title={
+          <Group gap="sm">
+            <IconFolderPlus size={18} />
+            <Text fw={900}>Nueva colección</Text>
+          </Group>
+        }
         radius="lg"
         centered
       >
         <Stack gap="sm">
-          <Group gap="sm" align="flex-end" wrap={isMobile ? "wrap" : "nowrap"}>
-            <TextInput
-              value={emoji}
-              onChange={(e) => setEmoji(e.currentTarget.value)}
-              placeholder="✨"
-              w={isMobile ? "100%" : 92}
-              styles={{
-                input: { textAlign: "center", fontSize: 18 },
-              }}
-            />
-            <TextInput
-              value={name}
-              onChange={(e) => setName(e.currentTarget.value)}
-              placeholder='Ej: "Salidas", "Recetas", "Viajes"'
-              style={{ flex: 1, width: isMobile ? "100%" : "auto" }}
-            />
-          </Group>
-
-          <Group justify="flex-end" gap="sm">
-            <Button
-              variant="default"
-              onClick={() => setShowNew(false)}
-              disabled={saving}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={onCreate} loading={saving} disabled={!name.trim()}>
-              Crear
-            </Button>
-          </Group>
-
-          <Text size="xs" c="dimmed">
-            Ideas: 🍷 Salidas · 🍜 Comidas · 🧳 Viajes · 🛍️ Compras
+          <Text c="dimmed" size="sm">
+            Esto es como crear un “board”. Luego mueves links aquí.
           </Text>
+
+          <Group gap="sm" align="stretch" wrap={isMobile ? "wrap" : "nowrap"}>
+            {/* Emoji preview big (social) */}
+            <Box
+              style={{
+                width: isMobile ? "100%" : 96,
+                height: 96,
+                borderRadius: 22,
+                display: "grid",
+                placeItems: "center",
+                border: "1px solid var(--mantine-color-default-border)",
+                background:
+                  "radial-gradient(300px 140px at 30% 0%, rgba(255,105,180,0.18), transparent 60%), radial-gradient(300px 140px at 70% 0%, rgba(99,102,241,0.14), transparent 60%), color-mix(in srgb, var(--mantine-color-body) 88%, transparent)",
+                fontSize: 34,
+                lineHeight: "34px",
+              }}
+            >
+              {(emoji || "✨").trim() || "✨"}
+            </Box>
+
+            <Stack
+              gap="sm"
+              style={{ flex: 1, width: isMobile ? "100%" : "auto" }}
+            >
+              <TextInput
+                value={emoji}
+                onChange={(e) => setEmoji(e.currentTarget.value)}
+                label="Emoji"
+                placeholder="✨"
+                styles={{ input: { textAlign: "center", fontSize: 18 } }}
+                radius="lg"
+                disabled={saving}
+              />
+
+              <TextInput
+                value={name}
+                onChange={(e) => setName(e.currentTarget.value)}
+                label="Nombre"
+                placeholder='Ej: "Salidas", "Recetas", "Viajes"'
+                radius="lg"
+                disabled={saving}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onCreate();
+                }}
+              />
+            </Stack>
+          </Group>
+
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Text size="xs" c="dimmed">
+              Ideas: 🍷 Salidas · 🍜 Comidas · 🧳 Viajes · 🛍️ Compras
+            </Text>
+
+            <Group gap="sm">
+              <Button
+                variant="default"
+                onClick={() => setShowNew(false)}
+                disabled={saving}
+                radius="xl"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={onCreate}
+                loading={saving}
+                disabled={!name.trim()}
+                radius="xl"
+              >
+                Crear
+              </Button>
+            </Group>
+          </Group>
         </Stack>
       </Modal>
     </Box>
   );
 }
 
-function CollectionCard({ c, onOpen }: { c: any; onOpen: () => void }) {
+function CollectionCard({
+  c,
+  onOpen,
+  previewItems,
+  previewCache,
+  setPreviewCache,
+}: {
+  c: any;
+  onOpen: () => void;
+  previewItems: any[];
+  previewCache: Record<string, LinkPreview | null>;
+  setPreviewCache: React.Dispatch<
+    React.SetStateAction<Record<string, LinkPreview | null>>
+  >;
+}) {
   const count = typeof c.itemCount === "number" ? c.itemCount : null;
 
   return (
     <Card
       withBorder
-      radius="xl"
-      p="md"
+      p={0}
       component="button"
       onClick={onOpen}
       style={{
         textAlign: "left",
         cursor: "pointer",
+        overflow: "hidden",
         background:
           "color-mix(in srgb, var(--mantine-color-body) 92%, transparent)",
         transition: "transform 140ms ease, box-shadow 140ms ease",
@@ -342,47 +505,116 @@ function CollectionCard({ c, onOpen }: { c: any; onOpen: () => void }) {
         },
       }}
     >
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-          <Box
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              display: "grid",
-              placeItems: "center",
-              border: "1px solid var(--mantine-color-default-border)",
-              background:
-                "color-mix(in srgb, var(--mantine-color-body) 86%, transparent)",
-              flex: "0 0 auto",
-              fontSize: 22,
-              lineHeight: "22px",
-            }}
-          >
-            {c.emoji || "✨"}
-          </Box>
+      {/* Cover (social board style) */}
+      <Box
+        style={{
+          height: 84,
+          padding: 14,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          background:
+            "radial-gradient(420px 160px at 18% 0%, rgba(255,105,180,0.20), transparent 58%), radial-gradient(420px 160px at 82% 0%, rgba(99,102,241,0.16), transparent 58%), color-mix(in srgb, var(--mantine-color-body) 86%, transparent)",
+          borderBottom: "1px solid var(--mantine-color-default-border)",
+          position: "relative",
+        }}
+      >
+        {/* Thumbnails de preview - se muestran detrás del emoji */}
+        <Box
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            gap: 4,
+            padding: 6,
+            overflow: "hidden",
+          }}
+        >
+          {previewItems.slice(0, 3).map((item) => (
+            <PreviewThumbnail
+              key={item.id}
+              url={item.url}
+              total={Math.min(previewItems.length, 3)}
+              previewCache={previewCache}
+              setPreviewCache={setPreviewCache}
+            />
+          ))}
+        </Box>
+      </Box>
 
-          <Box style={{ minWidth: 0 }}>
-            <Text fw={800} lineClamp={1}>
-              {c.name || "Sin nombre"}
-            </Text>
-            <Text size="sm" c="dimmed" lineClamp={1}>
-              Abrir colección
-            </Text>
-          </Box>
-        </Group>
-
-        <Group align="center">
-          <Flex gap="xs" align="center">
-            {count !== null && (
-              <Badge variant="light" radius="xl">
-                {count}
-              </Badge>
-            )}
-            <IconChevronRight size={18} />
-          </Flex>
-        </Group>
-      </Group>
+      {/* Body */}
+      <Box p="xs">
+        <Text fw={900} lineClamp={2}>
+          {c.name || "Sin nombre"} ({count !== null ? count : "…"})
+        </Text>
+      </Box>
     </Card>
+  );
+}
+
+/** Thumbnail individual para preview de colección */
+function PreviewThumbnail({
+  url,
+  total,
+  previewCache,
+  setPreviewCache,
+}: {
+  url: string;
+  total: number;
+  previewCache: Record<string, LinkPreview | null>;
+  setPreviewCache: React.Dispatch<
+    React.SetStateAction<Record<string, LinkPreview | null>>
+  >;
+}) {
+  const preview = useLinkPreview(url, previewCache, setPreviewCache);
+  const imageUrl = preview?.image;
+
+  // Calcular el ancho según cuántas thumbnails hay
+  const widthPercent = total === 1 ? 100 : total === 2 ? 50 : 33.33;
+
+  return (
+    <Box
+      style={{
+        flex: `0 0 ${widthPercent}%`,
+        height: "100%",
+        borderRadius: 10,
+        overflow: "hidden",
+        background: "var(--mantine-color-dark-6)",
+        opacity: 0.85,
+      }}
+    >
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/image-proxy?url=${encodeURIComponent(imageUrl)}`}
+          alt=""
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.display = "none";
+          }}
+        />
+      ) : (
+        <Box
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "grid",
+            placeItems: "center",
+            background: "var(--mantine-color-dark-7)",
+          }}
+        >
+          <IconLink size={16} style={{ opacity: 0.3 }} />
+        </Box>
+      )}
+    </Box>
   );
 }
