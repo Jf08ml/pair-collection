@@ -7,6 +7,7 @@ import {
   limit as firestoreLimit,
   orderBy,
   query,
+  QueryConstraint,
   runTransaction,
   serverTimestamp,
   where,
@@ -79,7 +80,7 @@ export async function listItemsByCollection(params: {
   const { coupleId, collectionId, limit } = params;
 
   const ref = collection(db, "couples", coupleId, "items");
-  const constraints = [
+  const constraints: QueryConstraint[] = [
     where("collectionId", "==", collectionId),
     orderBy("createdAt", "desc"),
   ];
